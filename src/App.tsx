@@ -1,0 +1,60 @@
+import { useEffect } from 'react';
+import { useUiStore, type Tab } from './state/uiStore';
+import { LibraryScreen } from './library/LibraryScreen';
+import { StoryScreen } from './story/StoryScreen';
+import { MapScreen } from './map/MapScreen';
+import { MoreScreen } from './more/MoreScreen';
+import './App.css';
+
+const TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'library', label: 'Library', icon: '📚' },
+  { id: 'story', label: 'Story', icon: '📖' },
+  { id: 'map', label: 'Map', icon: '🗺️' },
+  { id: 'more', label: 'More', icon: '⋯' },
+];
+
+function App() {
+  const tab = useUiStore((s) => s.tab);
+  const setTab = useUiStore((s) => s.setTab);
+  const theme = useUiStore((s) => s.theme);
+  const fontScale = useUiStore((s) => s.fontScale);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${16 * fontScale}px`;
+  }, [fontScale]);
+
+  return (
+    <div className="app-shell">
+      <main className="app-content" aria-live="polite">
+        {tab === 'library' && <LibraryScreen />}
+        {tab === 'story' && <StoryScreen />}
+        {tab === 'map' && <MapScreen />}
+        {tab === 'more' && <MoreScreen />}
+      </main>
+      <nav className="tab-bar" aria-label="Main navigation">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`tab-bar-button tap-target${tab === t.id ? ' active' : ''}`}
+            aria-current={tab === t.id ? 'page' : undefined}
+            onClick={() => setTab(t.id)}
+          >
+            <span className="tab-bar-icon" aria-hidden="true">
+              {t.icon}
+            </span>
+            <span className="tab-bar-label">{t.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+export default App;

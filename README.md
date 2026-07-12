@@ -11,7 +11,25 @@ A locally-hostable web app for playing Infocom-era text adventures (Z-machine ga
 
 ## Status
 
-Planning. See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the researched architecture and the phased, task-by-task implementation plan.
+Phase 1 (mobile-first playable web app with autosave and auto-map) is under active implementation. See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the researched architecture and the phased, task-by-task implementation plan, and [`docs/SPECS.md`](docs/SPECS.md) for the exact contracts.
+
+## Development
+
+```sh
+npm install
+npm run dev       # dev server, http://localhost:5173
+npm test          # vitest
+npm run lint       # eslint
+npm run format     # prettier --write
+npm run build      # tsc -b && vite build
+```
+
+Verify at a mobile viewport (390×844) during development; a real Android Chrome check
+closes out each phase-1 task per the plan.
+
+Deployment is automatic via `.github/workflows/deploy.yml` on push to `main`, publishing
+to GitHub Pages (must be enabled once in repo settings: Settings → Pages → Source →
+GitHub Actions).
 
 ## Story files
 
