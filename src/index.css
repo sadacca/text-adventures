@@ -1,0 +1,81 @@
+:root {
+  --bg: #f5f5f7;
+  --bg-elevated: #ffffff;
+  --text: #14161a;
+  --text-dim: #5a5f6b;
+  --border: #dcdde2;
+  --accent: #3b6fe0;
+  --accent-contrast: #ffffff;
+  --danger: #c0392b;
+  --tab-bar-height: 56px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  color-scheme: light dark;
+  font:
+    16px/1.45 system-ui,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme='dark'] {
+  --bg: #14161a;
+  --bg-elevated: #1e2127;
+  --text: #eef0f4;
+  --text-dim: #9aa0ac;
+  --border: #33363f;
+  --accent: #7ba8ff;
+  --accent-contrast: #0b1220;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #14161a;
+    --bg-elevated: #1e2127;
+    --text: #eef0f4;
+    --text-dim: #9aa0ac;
+    --border: #33363f;
+    --accent: #7ba8ff;
+    --accent-contrast: #0b1220;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+#root {
+  height: 100svh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tap-target {
+  min-height: 44px;
+  min-width: 44px;
+}

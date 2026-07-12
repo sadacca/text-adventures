@@ -1,0 +1,46 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Story files: never commit copyrighted Infocom/Z-machine data.
+# Users load their own; dev/test fixtures use freely redistributable games
+# fetched at test time (see tests/fixtures) or tiny purpose-built Inform 6 files.
+*.z1
+*.z2
+*.z3
+*.z4
+*.z5
+*.z6
+*.z7
+*.z8
+*.dat
+*.zblorb
+*.blb
+*.blorb
+*.gblorb
+
+# vitest / coverage
+coverage
+.tsbuildinfo
+
