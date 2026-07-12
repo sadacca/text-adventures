@@ -15,7 +15,12 @@ Phase 1 (mobile-first playable web app with autosave and auto-map) is under acti
 
 ## Development
 
+This repo vendors [asyncglk](https://github.com/curiousdannii/asyncglk) as a git
+submodule (it isn't published to npm — see `docs/IMPLEMENTATION_PLAN.md` Task 1.3),
+so clone with `--recurse-submodules` or run `git submodule update --init` afterwards.
+
 ```sh
+git submodule update --init
 npm install
 npm run dev       # dev server, http://localhost:5173
 npm test          # vitest

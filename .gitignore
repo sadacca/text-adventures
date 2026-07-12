@@ -44,3 +44,6 @@ dist-ssr
 coverage
 .tsbuildinfo
 
+# Vendored asyncglk (git submodule) is built locally, not committed
+src/upstream/asyncglk-dist
+

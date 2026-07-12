@@ -205,9 +205,9 @@ scripts ☐ `vite-plugin-pwa` with base-aware manifest ☐ tab shell renders at 
 **1.2 Library** ☐ file picker accepts z3/z5/z8/dat/zblorb ☐ sha256 gameId dedupes
 re-uploads ☐ list sorted by lastPlayedAt ☐ delete confirms ☐ persists across reload.
 
-**1.3 Engine** ☐ emglken+asyncglk render a z5 AND a z3 game ☐ WASM served locally
-☐ autosave snapshot+restore spike proven ☐ decision-gate outcome recorded in PLAN
-☐ engine fully behind `EngineHandle`.
+**1.3 Engine** ☑ emglken+asyncglk render a z5 AND a z3 game ☑ WASM served locally
+☑ autosave snapshot+restore spike proven ☑ decision-gate outcome recorded in PLAN
+☑ engine fully behind `EngineHandle`.
 
 **1.4 Protocol tap** ☐ all messages observed unmodified ☐ GameEvent stream matches
 fixture expectations ☐ DebugConsole shows live events ☐ fixture recording works.

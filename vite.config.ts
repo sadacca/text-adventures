@@ -8,6 +8,12 @@ const base = process.env.VITE_BASE_PATH ?? '/text-adventures/';
 // https://vite.dev/config/
 export default defineConfig({
   base,
+  optimizeDeps: {
+    // emglken's Emscripten glue locates its .wasm via `new URL(..., import.meta.url)`
+    // relative to its own file; Vite's dep pre-bundler copies the JS elsewhere and
+    // breaks that resolution, so leave it unbundled.
+    exclude: ['emglken'],
+  },
   plugins: [
     react(),
     VitePWA({
