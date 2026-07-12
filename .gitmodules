@@ -1,0 +1,3 @@
+[submodule "src/upstream/asyncglk"]
+	path = src/upstream/asyncglk
+	url = https://github.com/curiousdannii/asyncglk.git

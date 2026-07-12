@@ -31,7 +31,7 @@ The modern IF web stack (all MIT, all by Dannii Willis / Andrew Plotkin, all mai
 | Component | Repo | Role |
 |---|---|---|
 | Parchment | `curiousdannii/parchment` | Full web player app (reference implementation) |
-| AsyncGlk | `curiousdannii/asyncglk` (npm: `asyncglk`) | TypeScript GlkOte implementation + `Dialog` storage layer |
+| AsyncGlk | `curiousdannii/asyncglk` (vendored git submodule — see §3, Task 1.3) | TypeScript GlkOte implementation + `Dialog` storage layer |
 | emglken | `curiousdannii/emglken` (npm: `emglken`) | Prebuilt WASM interpreters (Bocfel, Glulxe, Hugo, TADS) speaking the RemGlk JSON protocol |
 | Lectrote | `erkyrath/lectrote` | Electron player — a second working example of wiring emglken + GlkOte |
 
@@ -219,6 +219,78 @@ snapshots and restores mid-game is enough at this stage).
 **Decision gate**: if wiring OR autosave can't be made to work in reasonable time,
 switch to the Parchment single-file iframe fallback (§1.4) — Parchment's own autosave
 then comes along for free — and adapt the protocol tap accordingly.
+
+**Decision-gate outcome (resolved 2026-07-12):** wiring worked; iframe fallback was not
+needed. Two premises in this plan turned out to be wrong, corrected as follows:
+
+1. **`asyncglk` is not an npm package.** Only `emglken` is published to the npm
+   registry; `asyncglk` (curiousdannii/asyncglk) has no npm release and no git tags
+   (pre-1.0, `master`/`first-concept` branches only). Owner decision: vendor it as a
+   git submodule at `src/upstream/asyncglk`, pinned to a commit SHA (currently
+   `67ff50261a8fa917e25141d79a9da4449ec64903`, re-pin manually as upstream evolves).
+   It's built separately (`npm run build:asyncglk`, wired as `predev`/`prebuild`/
+   `pretest`) via `asyncglk.build.tsconfig.json`, whose single entry point
+   (`src/index-common.ts`) pulls in only plain-TypeScript modules — its Svelte file
+   picker UI and jQuery-dependent `WebGlkOte`/browser `Dialog` live behind different
+   entry points (`index-browser.ts`) and are never imported, so neither Svelte nor
+   jQuery enters the build. Output goes to the gitignored `src/upstream/asyncglk-dist/`
+   (excluded from our own strict tsconfig/eslint, like a normal dependency's `dist`).
+   CI/deploy workflows now check out submodules (`actions/checkout@v4` with
+   `submodules: true`).
+2. **Z-machine "autosave" (full VM heap snapshot) isn't actually implemented
+   upstream.** `do_vm_autosave` exists as a Parchment option and `AutosaveData`/
+   `autosave_read`/`autosave_write` exist as types, but they're either dead code
+   (unreachable via the `AsyncDialog` interface emglken requires) or, on the
+   remglk-rs side, literally commented out with a `// TODO: Autorestore state`.
+   What *does* work end-to-end is ordinary Glk file I/O — the same mechanism behind
+   in-game SAVE/RESTORE (Quetzal). `EngineHandle.saveAutosave()` therefore drives a
+   silent, programmatic SAVE: it sets a deterministic fileref path (bypassing the
+   real file-picker prompt entirely, since our own `Dialog` implementation controls
+   `prompt()`) and sends the `save` command, capturing the Quetzal bytes as they're
+   written. `start(story, {autorestore: true})` is the RESTORE-side mirror. This was
+   proven with a same-session spike (`src/engine/`): play, move, save, move further,
+   restore, and confirm the room reverts — see the engine architecture note below for
+   what's built vs. deferred to Task 1.5.
+
+**Engine architecture actually built (`src/engine/`):**
+- `types.ts` — `GameEvent`/`EngineHandle`, verbatim from SPECS §1.
+- `emglken.d.ts` — hand-written ambient types (emglken ships none). Imports
+  `emglken/build/bocfel.js` directly rather than the `emglken` package barrel, which
+  re-exports all seven interpreters (Bocfel, Glulxe, Git, Hugo, Scare, TADS, plus a
+  no-Z6 Bocfel variant) from one file — importing the barrel pulled all ~9MB of wasm
+  into the production bundle, since a bundler can't tree-shake away another export's
+  module-level side effects. Importing the direct subpath keeps the bundle to just
+  `bocfel.wasm` (~1.3MB / ~445KB gzip).
+- `memory-dialog.ts` — `MemoryDialog`, an in-memory-only `AsyncDialog` implementation.
+  Note: `write()` copies bytes defensively (`.slice()`) — the buffer emglken hands to
+  `Dialog.write()` is a view into WASM linear memory, which later interpreter
+  execution can and does overwrite in place; storing the reference directly silently
+  corrupted every captured save until this was caught by the spike test.
+- `glkote-bridge.ts` — `BridgeGlkOte extends GlkOteBase` (asyncglk's plain-TS base
+  class — no jQuery/Svelte, unlike its `WebGlkOte`). Translates RemGlk protocol
+  updates into `GameEvent`s and owns the turn counter. Doubles as a first-cut protocol
+  tap; Task 1.4 hardens/extracts this with fixtures and dedicated tests.
+- `engine.ts` — `createEngine()` wires the above plus `emglken/build/bocfel.js`
+  behind `EngineHandle`.
+- Vite needs `optimizeDeps: { exclude: ['emglken'] }` (see `vite.config.ts`) — the
+  dependency pre-bundler otherwise copies emglken's JS into its cache dir, which
+  breaks the `new URL('bocfel.wasm', import.meta.url)` resolution Emscripten's glue
+  relies on (the dev server then 404s and SPA-fallback-serves `index.html`, which
+  trips the WASM MIME-type check in the browser).
+
+**Deferred to Task 1.5 (by design, not an oversight):** `MemoryDialog` doesn't persist
+anything to IndexedDB, so a fresh page load has no autosave to restore — the Task 1.3
+acceptance bar was a same-session "snapshot and restore mid-game" spike, which is what
+was built and verified. Task 1.5 needs a durable Dialog (e.g. persisting `/saves/*`
+paths to the `saves`/`autosaves` IndexedDB stores per SPECS §4) so `autorestore: true`
+has something to find after a real reload.
+
+**Verification performed:** `advent.z5` (v5) and `advent.z3` (v3, fetched from
+`curiousdannii/ifvms.js` test fixtures) both played end-to-end — movement, object
+interaction, status line, SAVE/RESTORE — through a Playwright session at a 390×844
+mobile viewport against the real `StoryScreen` UI (a minimal file-picker + transcript +
+command form; the full mobile command UI is Task 1.7). `npm run lint`, `npm test`,
+`npm run build`, and `tsc -b` all pass.
 
 ### Task 1.4 — Protocol tap + event bus
 Wrap the GlkOte send/receive path so every RemGlk JSON message is observed (not
