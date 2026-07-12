@@ -5,6 +5,11 @@ conclusions, the chosen architecture, and a phased task list with acceptance cri
 Where an external API must be confirmed, the task says "verify in source" and names the
 exact repo/file to read — do that before writing code against it.
 
+**Read [`SPECS.md`](SPECS.md) alongside this plan** — it pins down the exact contracts
+(types, IndexedDB schema, direction table, automapper rules as numbered test cases,
+component inventory, GitHub Pages deploy, per-task done-checklists) and records
+owner decisions: **GitHub Pages hosting** and **one playthrough per game**.
+
 ---
 
 ## 1. Research summary and key decisions
@@ -70,7 +75,10 @@ and hook GlkOte from outside. Less clean, but guaranteed to run games on day one
 
 ### 1.5 Platform path: local web app → PWA → Capacitor Android
 
-- Phase 1 ships a static web app served locally (`npm run dev` / any static server).
+- Phase 1 ships a static web app; **primary hosting is GitHub Pages** (owner decision —
+  free HTTPS, which service workers/PWA install require; a plain-HTTP LAN address would
+  silently lose offline + install). `npm run dev` remains the development loop; see
+  SPECS §7 for the deploy workflow and base-path rules.
 - Everything persistent lives in **IndexedDB** from day one (works identically in
   Android WebView), making the later Capacitor wrap a packaging exercise, not a rewrite.
 - PWA manifest + service worker make it installable on Android immediately;
@@ -247,7 +255,8 @@ the game. In-game SAVE/RESTORE also round-trips.
   command (teleport, cutscene) → new room placed unconnected, flagged. Dark rooms /
   missing status line → node named "(unknown)". Duplicate room names → disambiguate
   with a numeric suffix when the arrival direction contradicts known edges.
-- Persist the whole graph per game+playthrough in IndexedDB.
+- Persist the whole graph per game in IndexedDB (**one playthrough per game** — owner
+  decision; autosave + map + transcript form one bundle, wiped together on restart).
 Acceptance: vitest suite covering all the rules above using synthetic event sequences.
 
 ### Task 1.7 — Mobile command input (core UX, not polish)
