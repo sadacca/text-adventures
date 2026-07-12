@@ -2,9 +2,9 @@
 
 A locally-hostable web app for playing Infocom-era text adventures (Z-machine games) in the browser, with:
 
-- **Play in browser** — Z-machine interpreter (Bocfel via WebAssembly) supporting v1–v8 story files, covering the entire Infocom catalog and modern Inform games
-- **Save progress** — native in-game saves persisted to browser storage, plus export/import of standard Quetzal save files
-- **Auto-mapping** — a live map that builds itself as you explore, with manual correction tools
+- **Play in browser, mobile-first** — Z-machine interpreter (Bocfel via WebAssembly) supporting v1–v8 story files, covering the entire Infocom catalog and modern Inform games; designed for phone browsers (desktop is not a target), with a compass rose, verb chips, and tap-a-word input so typical play needs little or no typing
+- **Autosave** — state persists automatically every turn; killing the tab and reopening resumes exactly where you left off. In-game SAVE/RESTORE and Quetzal export/import also supported
+- **Auto-mapping** — a live map that builds itself as you explore, touch-editable, with tap-a-room auto-travel as the primary way to get around
 - **LLM assistance** (phase 2) — bring-your-own-API-token hints, graduated from gentle nudge to full spoiler
 - **Generated graphics** (phase 3) — AI-generated room illustrations, cached per room, offline or via API
 - **Android** (phase 4) — PWA first, then a Capacitor-wrapped native app

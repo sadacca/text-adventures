@@ -77,7 +77,36 @@ and hook GlkOte from outside. Less clean, but guaranteed to run games on day one
   the Capacitor native wrapper comes in Phase 4 for Play-Store distribution and
   native file access.
 
-### 1.6 Licensing and content rules
+### 1.6 Mobile-first is the design baseline (OWNER REQUIREMENT)
+
+**Desktop is not a consideration.** The primary target from day one is a phone browser
+(Android Chrome). This has three non-negotiable consequences:
+
+1. **Text entry must be effortless on a soft keyboard.** A bare parser prompt is
+   hostile on mobile (autocorrect mangles commands, keyboard covers the prompt,
+   typing "northwest" is tedious). Phase 1 therefore includes a dedicated
+   **command-assist layer** (Task 1.7): compass rose, tappable verb/noun chips,
+   command history, and correct soft-keyboard behavior (autocapitalize/autocorrect
+   off, input pinned above the keyboard via `visualViewport`, no focus loss after
+   submit).
+2. **Navigation must work by touch alone.** It must be possible to play typical
+   exploration (movement, look, take, inventory, save) without typing at all:
+   tap the compass rose, tap a mapped room to auto-travel, tap words in the story
+   text to build a command.
+3. **Autosave is a hard, gating phase-1 requirement** — mobile browsers kill
+   background tabs constantly, so losing state on tab-kill makes the app unusable.
+   State must persist automatically every turn and on `visibilitychange`, and
+   reopening the app must resume exactly where the player left off, with no manual
+   step. An engine wiring that cannot support autosave fails the Task 1.3 decision
+   gate. (Parchment/iplayif.com added Z-machine autosave with the Bocfel/RemGlk-rs
+   switch — verify in source how it hooks it, and reuse that mechanism.)
+
+Every acceptance criterion in this plan is evaluated **in a mobile viewport with
+touch input** (Chrome DevTools device emulation during development; real Android
+Chrome before calling a phase done). Layout is designed for portrait phone screens
+first; anything wider just gets more breathing room.
+
+### 1.7 Licensing and content rules
 
 - App code MIT. AsyncGlk/emglken/Parchment MIT; **Bocfel is GPL-2.0** — we use it as an
   unmodified prebuilt binary component; do not copy its source into this repo.
@@ -93,12 +122,12 @@ and hook GlkOte from outside. Less clean, but guaranteed to run games on day one
 
 ```
 +--------------------------------------------------------------+
-|                        React app shell                        |
-|  +----------------+  +-----------------+  +----------------+  |
-|  | Game panel     |  | Map panel (SVG) |  | Side panel     |  |
-|  | (GlkOte UI)    |  |  pan/zoom/edit  |  | saves/hints/   |  |
-|  |                |  |                 |  | art/settings   |  |
-|  +----------------+  +-----------------+  +----------------+  |
+|            React app shell (portrait phone layout)            |
+|  +----------------------------------------------------------+ |
+|  | Tab bar: [Story] [Map] [More: saves/hints/art/settings]  | |
+|  |  Story tab: GlkOte text + command-assist bar + compass   | |
+|  |  Map tab: SVG map, pan/zoom/edit, tap-to-travel          | |
+|  +----------------------------------------------------------+ |
 |          ^                    ^                   ^            |
 |          |             +------+-------------------+            |
 |          |             |   Event bus (typed events)            |
@@ -150,28 +179,38 @@ Parchment-iframe fallback) without touching features.
 
 ---
 
-## 3. Phase 1 — Playable web app with saves and auto-map
+## 3. Phase 1 — Mobile-first playable web app with autosave and auto-map
+
+All phase-1 tasks are built and verified in a **portrait mobile viewport with touch
+emulation**; a real Android Chrome check closes the phase.
 
 ### Task 1.1 — Scaffold
 Vite + React + TypeScript + Vitest + ESLint/Prettier. `idb` for IndexedDB. PWA manifest
 and minimal service worker (cache app shell). `.gitignore` includes story-file
-extensions. Acceptance: `npm run dev` serves a page; `npm test` runs.
+extensions. Mobile viewport meta (`viewport-fit=cover`, no user-scaling surprises),
+safe-area insets, and a portrait tab-bar app skeleton (Story / Map / More).
+Acceptance: `npm run dev` serves the skeleton; renders correctly at 390×844.
 
 ### Task 1.2 — Game library
-Upload `.z3/.z5/.z8/.dat/.zblorb` via file picker; store bytes in IndexedDB with
-metadata (name, added date, last played). List + delete + "play". Acceptance: reload
-the page and the library persists.
+Upload `.z3/.z5/.z8/.dat/.zblorb` via file picker (works with Android Chrome's file
+sheet); store bytes in IndexedDB with metadata (name, added date, last played). List +
+delete + "resume". Touch targets ≥ 44px. Acceptance: reload the page and the library
+persists; add/delete/resume all workable one-handed in the emulated viewport.
 
 ### Task 1.3 — Interpreter integration (the risky task — do it early)
 Wire `emglken` (Bocfel) + `asyncglk` (GlkOte) to run a story file from the library in
-a game panel. **Before coding, read**: Parchment `src/common/launcher.ts` (or nearest
+the Story tab. **Before coding, read**: Parchment `src/common/launcher.ts` (or nearest
 equivalent — verify in source) and Lectrote's emglken wiring, to see the expected
 GlkOte options, Dialog instance, and WASM loading. Serve WASM assets locally
-(no CDN — the app must work fully offline).
-Acceptance: a public-domain z5 game and a v3 story file both play end-to-end with
-keyboard input, status line rendering, and correct text styling.
-**Decision gate**: if this can't be made to work in reasonable time, switch to the
-Parchment single-file iframe fallback (§1.4) and adapt the protocol tap accordingly.
+(no CDN — the app must work fully offline). Also locate **how Parchment implements
+Z-machine autosave** (added with the Bocfel/RemGlk-rs switch) — the wiring chosen here
+must expose it.
+Acceptance: a public-domain z5 game and a v3 story file both play end-to-end on the
+mobile viewport, and the autosave hook point is identified and proven (a spike that
+snapshots and restores mid-game is enough at this stage).
+**Decision gate**: if wiring OR autosave can't be made to work in reasonable time,
+switch to the Parchment single-file iframe fallback (§1.4) — Parchment's own autosave
+then comes along for free — and adapt the protocol tap accordingly.
 
 ### Task 1.4 — Protocol tap + event bus
 Wrap the GlkOte send/receive path so every RemGlk JSON message is observed (not
@@ -180,17 +219,22 @@ contents), `buffer_text` (main window text runs), `input_requested`. Unit-test t
 parsing against captured protocol fixtures (record a short play session to JSON and
 commit it as a fixture). Acceptance: a debug console pane shows the live event stream.
 
-### Task 1.5 — Saves
-- Native saves: ensure the in-game SAVE/RESTORE commands work via AsyncGlk's `Dialog`
-  backed by IndexedDB (verify in asyncglk source which Dialog class does browser
-  storage; Parchment shows how to instantiate it).
-- Export/import: download any stored save as a standard **Quetzal** file; import one back.
-- Autosave/resume: investigate AsyncGlk/Parchment autosave support for Z-machine
-  (Parchment gained autosave around the RemGlk-rs/Bocfel switch — verify in source).
-  If available, wire it so closing the tab and reopening resumes in place. If not,
-  fall back to: on resume, offer "restore your most recent save".
+### Task 1.5 — Autosave and saves (gating requirement — see §1.6)
+- **Autosave (the priority)**: using the hook proven in Task 1.3, snapshot interpreter
+  state to IndexedDB after **every turn** and on `visibilitychange`/`pagehide` (the
+  reliable mobile lifecycle signals — `beforeunload` is not dependable on Android).
+  Opening a game from the library resumes the autosave automatically — no prompt, no
+  restore step. Keep the last few autosave generations in case one is corrupt.
+- Native saves: in-game SAVE/RESTORE commands work via AsyncGlk's `Dialog` backed by
+  IndexedDB (verify in asyncglk source which Dialog class does browser storage;
+  Parchment shows how to instantiate it). These are the player's deliberate,
+  named snapshots; autosave is the safety net.
+- Export/import: share/download a save as a standard **Quetzal** file; import one back
+  (uses the Web Share API where available, falls back to download).
 - Per-game transcript log persisted to IndexedDB (also feeds phases 2–3).
-Acceptance: save in Zork-like game, close tab, reopen, restore, state matches.
+Acceptance (on mobile emulation): play 10 turns, background the tab, kill it, reopen
+the app — the game resumes at turn 10 with scrollback intact, zero taps beyond opening
+the game. In-game SAVE/RESTORE also round-trips.
 
 ### Task 1.6 — Auto-map: graph model (pure logic, no UI; heavy unit tests)
 - Rooms keyed by normalized status-line room name; track "current room".
@@ -206,24 +250,49 @@ Acceptance: save in Zork-like game, close tab, reopen, restore, state matches.
 - Persist the whole graph per game+playthrough in IndexedDB.
 Acceptance: vitest suite covering all the rules above using synthetic event sequences.
 
-### Task 1.7 — Auto-map: layout + rendering + editing
+### Task 1.7 — Mobile command input (core UX, not polish)
+The goal: common play requires little or no typing, and typing, when needed, is
+painless.
+- **Soft-keyboard-correct text field**: `autocapitalize="off" autocorrect="off"
+  spellcheck="false" enterkeyhint="send"`; keep the input visible above the keyboard
+  using the `visualViewport` API; keep focus after submitting so the keyboard doesn't
+  bounce; scroll new story text into view above the input.
+- **Compass rose**: persistent compact control (expandable) with N/S/E/W/NE/NW/SE/SW/
+  U/D/IN/OUT — one tap sends the move. Directions the map knows to be exits are
+  visually emphasized.
+- **Verb chips**: one row of common commands (look, take, drop, open, examine,
+  inventory, wait, again) — tapping either sends immediately (no-object verbs) or
+  inserts the verb and focuses the input.
+- **Tap-a-word**: tapping a word in the story text appends it to the command being
+  built (e.g. tap "examine" chip, tap "lantern" in the text, send).
+- **History & repeat**: swipe up on input (or a chip) for recent commands; big
+  "again" affordance.
+Acceptance (mobile emulation + real device): traverse 10 rooms, pick up two objects,
+and check inventory **without typing a single character**; when typing "xyzzy", no
+autocorrect interference and the input stays visible.
+
+### Task 1.8 — Auto-map: layout + rendering + touch editing
 - Layout: compass directions map to grid offsets (up/down/in/out get diagonal or
   stacked-level treatment — pick one, document it); collision resolution by shifting;
   simple and deterministic beats fancy force-directed.
-- Render as SVG in the map panel: rooms as boxes (current room highlighted), edges as
-  lines with direction, dashed for inferred, pan/zoom (pointer events, no heavy deps).
-- Editing: drag rooms, delete/merge rooms, delete edges, rename rooms, add notes.
-  Edits are sticky (stored flags) so the automapper never undoes a manual change.
-- Click a room → optional "travel" (emit the command sequence via BFS over confirmed
-  edges) — nice-to-have; skip if time-constrained.
-Acceptance: play 10+ rooms of a v3 game; map matches actual geography; manual fixes
-survive reload.
+- Render as SVG in the Map tab: rooms as boxes (current room highlighted), edges as
+  lines with direction, dashed for inferred. **Touch-first interactions**: one-finger
+  pan, pinch zoom, tap to select, long-press for the edit menu (rename/delete/merge/
+  note), drag to move a room. No hover-dependent UI anywhere.
+- **Tap-to-travel is core on mobile** (this is primary navigation, per §1.6): tap a
+  visited room → the app computes the path over confirmed edges (BFS) and sends the
+  movement commands turn by turn, stopping immediately if any response deviates from
+  the expected room (combat, locked door, darkness).
+- Edits are sticky (stored flags) so the automapper never undoes a manual change.
+Acceptance: on mobile emulation, play 10+ rooms; map matches geography; pinch/pan/
+long-press editing works; tap-to-travel crosses 3+ rooms and stops correctly when
+blocked; manual fixes survive reload.
 
-### Task 1.8 — Polish & offline
-Responsive layout (map collapses to a tab on narrow screens — this is the future
-Android UI), dark/light theme, keyboard focus management, service worker caches
-everything including WASM (fully offline after first load). Acceptance: Lighthouse PWA
-installable check passes; airplane-mode reload works.
+### Task 1.9 — Polish & offline
+Dark/light theme, font-size control (reading comfort on phones), service worker caches
+everything including WASM (fully offline after first load), install prompt flow.
+Acceptance: Lighthouse PWA installable check passes; airplane-mode reload on a real
+Android phone works; full session (play, map, autosave-resume) verified on the device.
 
 ---
 
@@ -283,14 +352,16 @@ duplicate generation for revisited rooms; app remains fully functional with art 
 
 ## 6. Phase 4 — Android
 
-1. Confirm the PWA already installs and runs well on Android Chrome (it should, from
-   Task 1.8).
-2. Add **Capacitor**: wrap the built web app; use Capacitor Filesystem/SAF plugin for
+Because phase 1 is mobile-first (tabbed layout, compass rose, touch map editing,
+autosave all already built and verified on Android Chrome), this phase is packaging,
+not UX work:
+
+1. Add **Capacitor**: wrap the built web app; use Capacitor Filesystem/SAF plugin for
    importing story files and exporting Quetzal saves on Android; keep IndexedDB as the
    store (it persists in Capacitor's WebView).
-3. Android-specific UX: tabbed game/map layout, on-screen compass rose for movement,
-   larger touch targets on the map editor.
-4. Optional Play-Store packaging; otherwise distribute the APK directly.
+2. Native niceties: back-button handling (map tab → story tab → home), keep-screen-on
+   toggle, share-sheet integration for save export.
+3. Optional Play-Store packaging; otherwise distribute the APK directly.
 Acceptance: sideloaded APK plays a game, saves, maps, and restores fully offline.
 
 ---
@@ -301,15 +372,19 @@ Acceptance: sideloaded APK plays a game, saves, maps, and restores fully offline
 |---|---|
 | `emglken`/`asyncglk` npm APIs undocumented or awkward | Read Parchment + Lectrote wiring first; decision gate in Task 1.3 with Parchment-iframe fallback |
 | Status-line room name unreliable in some games (v5+ custom status, v6) | Manual "mark room" button; disambiguation rules in Task 1.6; memory-peeking enhancement later |
-| Autosave not supported for our stack | Fall back to prompting restore of latest save on resume |
+| Autosave unachievable in our own wiring (gating — §1.6) | Task 1.3 proves it in a spike before further engine work; Parchment-iframe fallback inherits Parchment's own autosave |
+| Mobile soft-keyboard quirks (viewport jumps, autocorrect, focus loss) | Task 1.7 addresses directly (`visualViewport`, input attributes); command-assist UI reduces typing to near zero; test on real Android Chrome each phase |
 | Bocfel GPL-2.0 | Consume unmodified prebuilt WASM; keep app code separate; attribute in About screen |
 | Copyright of Infocom games | Never bundle; user-supplied files only; test with free games |
 | LLM hints hallucinate puzzle solutions | Honesty instructions + optional user-supplied walkthrough grounding |
 
 ## 8. Suggested execution order & test discipline
 
-Tasks 1.1 → 1.3 (risky integration first) → 1.4 → 1.6 (pure logic, TDD) → 1.5 → 1.7 →
-1.8, then phases 2–4 in order. Every pure-logic module (graph, layout, protocol
-parsing, prompt assembly) gets vitest coverage from fixtures; UI gets a smoke test.
-Record real protocol sessions as fixtures early — they make everything downstream
-testable without running the WASM interpreter in CI.
+Tasks 1.1 → 1.3 (risky integration + autosave spike first) → 1.5 (autosave complete —
+it gates everything) → 1.4 → 1.7 (mobile input) → 1.6 (pure logic, TDD) → 1.8 → 1.9,
+then phases 2–4 in order. Every pure-logic module (graph, layout, protocol parsing,
+prompt assembly) gets vitest coverage from fixtures; UI gets a smoke test. Record real
+protocol sessions as fixtures early — they make everything downstream testable without
+running the WASM interpreter in CI. Develop with Chrome DevTools mobile emulation as
+the default viewport; verify each phase on a real Android phone before declaring it
+done.
