@@ -316,6 +316,61 @@ Acceptance (on mobile emulation): play 10 turns, background the tab, kill it, re
 the app — the game resumes at turn 10 with scrollback intact, zero taps beyond opening
 the game. In-game SAVE/RESTORE also round-trips.
 
+**Outcome (2026-07-12): done, with one real bug found and fixed along the way and one
+design deviation from what this section originally implied.**
+
+- **`storage/` (new):** `db.ts` (the full §4 IndexedDB schema, one `openDB` call, all six
+  stores), `gameId.ts` (sha256-based id + blorb/zcode sniffing), `games.ts` (CRUD +
+  cascade delete + `restartPlaythrough`), `autosaves.ts` (generation write + prune-to-3 +
+  latest lookup), `saves.ts` (named-save CRUD + Quetzal export via `navigator.share`/
+  download-link fallback + import), `transcripts.ts` (2000-entry ring buffer). All have
+  direct vitest coverage (`tests/storage.test.ts`) using `fake-indexeddb` (added as a
+  dev dependency and wired into `tests/setup.ts` — jsdom has no native IndexedDB).
+- **`EngineHandle` grew three methods** not in the original SPECS.md draft:
+  `preloadAutosave`, `onNamedSavePrompt`, `onNamedSaveWritten` (see SPECS.md's own copy
+  for the exact contract). The engine still never touches IndexedDB itself — the new
+  session-orchestration layer, `src/state/engineStore.ts` (zustand), owns all storage
+  calls, autosave-after-every-turn, the `visibilitychange`/`pagehide` flush, and the
+  player-facing SAVE/RESTORE naming prompts (currently plain `window.prompt`/`confirm` —
+  functional, not the polished bottom-sheet UI Task 1.7/1.8 will eventually want).
+- **Real bug found via the mobile-viewport Playwright check, not by inspection: a race
+  condition in `engine.ts` dropped commands.** GlkOte's `waiting_for_update` guard
+  silently discards any command sent while the interpreter hasn't yet reached its next
+  input-request (just a console warning, no error, no event) — and the original
+  `start()`/`saveAutosave()` resolved as soon as the command was *sent*, not once its
+  response cycle (which for RESTORE can be multi-step) fully settled. A caller acting
+  immediately on that resolved promise — exactly what `engineStore` does — could have
+  its next real command dropped. Fixed with an explicit busy/ready queue in `engine.ts`
+  (`dispatch`/`whenReady`, plus an always-on internal listener that drains anything
+  queued once the VM signals it's ready for more input); `sendCommand` now queues rather
+  than firing-and-dropping when busy. Caught by first reproducing it in a Node spike
+  (`createEngine()` directly, no browser), which made it fast to isolate.
+- **Bocfel's own "history playback" on RESTORE turned out to be unusable as a scrollback
+  source, so we don't use it.** Bocfel embeds a rolling window of recent commands in
+  every Quetzal file and replays them (by re-*sending* them, not just reprinting cached
+  text) when a save is restored — including our own silent per-turn background
+  autosaves, since Bocfel has no concept of "silent." A resumed session's replay is
+  therefore full of spurious `save` / `Ok.` noise, and — before the race-condition fix
+  above — could even corrupt the resulting state (a nested `restore` in the replayed
+  history failing against a fresh process's dialog, mid-replay). Given this, scrollback
+  on resume is reconstructed from **our own `transcripts` store** instead
+  (`engineStore.openGame`: on a resuming session, skip Bocfel's replay text entirely —
+  only trust its `status_line` — and rebuild the transcript from the structured
+  `{turn, command, response}` entries already being written on every real turn). Each
+  turn's stored `response` also has any embedded history-playback span stripped
+  (`stripHistoryReplay`) so it can't contaminate a *later* resume's reconstruction
+  either. This is a clean split in practice: Bocfel's replay is good enough to prove the
+  VM's internal state restores correctly (which is what Task 1.3's spike used it for,
+  same-session), but not to drive the UI.
+- **Verification:** Playwright at 390×844 — upload → resume → 10 turns → named SAVE →
+  more turns → named RESTORE (state correctly reverts) → simulated kill-tab (full page
+  navigation, same browser profile so IndexedDB persists) → reopen → resumes at the
+  correct room/turn with accurate, non-duplicated scrollback and a live, playable
+  session. Also verified: 3-generation autosave pruning (both via a direct vitest case
+  and via the live IndexedDB dump during the Playwright run), Restart (wipes
+  autosave/map/transcript, keeps the game and named saves), and Quetzal export → delete
+  → re-import round-trip (downloaded file starts with the Quetzal `FORM` magic bytes).
+
 ### Task 1.6 — Auto-map: graph model (pure logic, no UI; heavy unit tests)
 - Rooms keyed by normalized status-line room name; track "current room".
 - On `command` matching a movement verb (n/s/e/w/ne/nw/se/sw/up/down/in/out/enter/exit

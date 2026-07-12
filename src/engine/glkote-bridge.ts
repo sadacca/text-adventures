@@ -25,6 +25,7 @@ export class BridgeGlkOte extends GlkOteBase {
   private inputType: 'line' | 'char' | null = null;
   private gridRows = new Map<number, Map<number, string>>();
   private turn = 0;
+  private silent = false;
   private readonly emit: (event: GameEvent) => void;
 
   constructor(emit: (event: GameEvent) => void) {
@@ -38,8 +39,25 @@ export class BridgeGlkOte extends GlkOteBase {
 
   /** Send a line-input command to the VM; this is what advances the turn counter. */
   sendCommand(text: string): void {
+    this.silent = false;
     this.turn += 1;
     this.emit({ kind: 'command', text, turn: this.turn });
+    this.dispatchLine(text);
+  }
+
+  /**
+   * Send a line-input command that does NOT advance the turn counter and is not
+   * reported as a 'command' event — used for the engine's own background SAVE/RESTORE
+   * (Task 1.5's autosave substitute). Its resulting buffer_text/status_line/
+   * input_requested events are still emitted (so callers like `saveAutosave()` can see
+   * them complete) but tagged `silent: true` so UI transcripts can skip them.
+   */
+  sendSilentCommand(text: string): void {
+    this.silent = true;
+    this.dispatchLine(text);
+  }
+
+  private dispatchLine(text: string): void {
     const window = this.inputWindowId ?? this.bufferWindowId ?? 0;
     this.send_event({ type: 'line', value: text, window });
   }
@@ -66,7 +84,7 @@ export class BridgeGlkOte extends GlkOteBase {
         this.apply_grid_update(update);
       } else if (kind === 'buffer' && 'text' in update && update.text) {
         const text = update.text.map((para) => run_text(para.content)).join('\n');
-        if (text) this.emit({ kind: 'buffer_text', text, turn: this.turn });
+        if (text) this.emit({ kind: 'buffer_text', text, turn: this.turn, silent: this.silent });
       }
     }
   }
@@ -87,7 +105,7 @@ export class BridgeGlkOte extends GlkOteBase {
     const split = first.match(/^(.*?\S)? {2,}(\S.*)?$/);
     const left = (split?.[1] ?? first).trim();
     const right = (split?.[2] ?? '').trim();
-    this.emit({ kind: 'status_line', left, right, raw, turn: this.turn });
+    this.emit({ kind: 'status_line', left, right, raw, turn: this.turn, silent: this.silent });
   }
 
   protected update_inputs(windows: protocol.InputUpdate[]): void {
@@ -99,7 +117,16 @@ export class BridgeGlkOte extends GlkOteBase {
     }
     this.inputWindowId = active.id;
     this.inputType = active.type as 'line' | 'char';
-    this.emit({ kind: 'input_requested', type: this.inputType, turn: this.turn });
+    this.emit({
+      kind: 'input_requested',
+      type: this.inputType,
+      turn: this.turn,
+      silent: this.silent,
+    });
+    // Not reset here: a listener reacting to this very event may synchronously send a
+    // silent command of its own (e.g. an autosave-after-every-turn hook), which must not
+    // have its `silent = true` clobbered by this call still unwinding. `sendCommand`
+    // clears it instead, since any real player command definitely ends silent mode.
   }
 
   protected cancel_inputs(_windows: protocol.InputUpdate[]): void {
