@@ -11,7 +11,21 @@ A locally-hostable web app for playing Infocom-era text adventures (Z-machine ga
 
 ## Status
 
-Phase 1 (mobile-first playable web app with autosave and auto-map) is under active implementation. **Confirmed fully playable end-to-end in production** (GitHub Pages deploy) with a real Infocom v3 game: upload, boot, play, autosave, resume, restart (Tasks 1.1–1.3, 1.5, and a minimal Task 1.2 library). Two production bugs surfaced and were fixed during that verification pass — see the Task 1.2 and 1.3 outcome notes in `IMPLEMENTATION_PLAN.md`. Still not built: the protocol tap's Task 1.4 fixture-based hardening, the mobile command-assist UI (compass rose, verb chips, tap-a-word — Task 1.7, so play currently requires typing), and auto-mapping (Tasks 1.6/1.8 — the Map tab is a placeholder). See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the researched architecture and the phased, task-by-task implementation plan (including outcome notes recording where reality diverged from the original plan), and [`docs/SPECS.md`](docs/SPECS.md) for the exact contracts and per-task checklists.
+Phase 1 (mobile-first playable web app with autosave and auto-map) is nearly complete.
+**Confirmed fully playable end-to-end in production** (GitHub Pages deploy) with a real
+Infocom v3 game: upload, boot, play, autosave, resume, restart. Tasks 1.1–1.8 are done:
+the interpreter (Bocfel/emglken + asyncglk), autosave/saves, the protocol tap with
+committed fixtures and a live DebugConsole, the auto-map graph model, the mobile
+command-assist UI (compass rose, verb chips, tap-a-word — typical play needs no typing),
+and the touch-editable map (pan/pinch, long-press rename/merge/delete, tap-to-travel).
+A couple of real bugs surfaced and were fixed along the way during Playwright/real-device
+verification passes — see the per-task outcome notes in `IMPLEMENTATION_PLAN.md`. Still
+not built: Task 1.9 (polish & fully-offline PWA — dark/light theme, font-size control,
+install-prompt flow, real-device airplane-mode check), which closes out Phase 1. See
+[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the researched
+architecture and the phased, task-by-task implementation plan (including outcome notes
+recording where reality diverged from the original plan), and
+[`docs/SPECS.md`](docs/SPECS.md) for the exact contracts and per-task checklists.
 
 ## Development
 
