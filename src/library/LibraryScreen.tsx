@@ -8,6 +8,7 @@ import {
   restartPlaythrough as restartPlaythroughInStorage,
   type GameRecord,
 } from '../storage/games';
+import { getLatestAutosave } from '../storage/autosaves';
 
 const ACCEPTED_EXTENSIONS = '.z1,.z2,.z3,.z4,.z5,.z6,.z7,.z8,.dat,.zblorb,.blb,.blorb,.gblorb';
 
@@ -17,20 +18,32 @@ function formatDate(ms: number): string {
 
 export function LibraryScreen() {
   const [games, setGames] = useState<GameRecord[]>([]);
+  const [savedGameIds, setSavedGameIds] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const setTab = useUiStore((s) => s.setTab);
   const openGame = useEngineStore((s) => s.openGame);
   const restartPlaythrough = useEngineStore((s) => s.restartPlaythrough);
   const activeGameId = useEngineStore((s) => s.gameId);
 
+  async function refreshSavedGameIds(list: GameRecord[]) {
+    const withSaves = await Promise.all(
+      list.map(async (g) => ((await getLatestAutosave(g.gameId)) ? g.gameId : null)),
+    );
+    setSavedGameIds(new Set(withSaves.filter((id): id is string => id !== null)));
+  }
+
   async function refresh() {
-    setGames(await listGames());
+    const list = await listGames();
+    setGames(list);
+    await refreshSavedGameIds(list);
   }
 
   useEffect(() => {
     let cancelled = false;
-    listGames().then((g) => {
-      if (!cancelled) setGames(g);
+    listGames().then(async (g) => {
+      if (cancelled) return;
+      setGames(g);
+      await refreshSavedGameIds(g);
     });
     return () => {
       cancelled = true;
@@ -70,10 +83,12 @@ export function LibraryScreen() {
       return;
     if (activeGameId === game.gameId) {
       await restartPlaythrough();
-      setTab('story');
     } else {
       await restartPlaythroughInStorage(game.gameId);
+      await openGame(game.gameId);
     }
+    setTab('story');
+    await refresh();
   }
 
   return (
@@ -107,7 +122,7 @@ export function LibraryScreen() {
             </div>
             <div className="game-list-actions">
               <button type="button" className="tap-target" onClick={() => void resume(game.gameId)}>
-                Resume
+                {savedGameIds.has(game.gameId) ? 'Resume' : 'Play'}
               </button>
               <button type="button" className="tap-target" onClick={() => void onRestart(game)}>
                 Restart
