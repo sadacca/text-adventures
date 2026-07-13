@@ -150,3 +150,40 @@
   border-radius: 6px;
   background: var(--bg);
 }
+
+.map-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.map-svg {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.map-edge {
+  stroke: var(--text-dim);
+  stroke-width: 2;
+}
+
+.map-room rect {
+  fill: var(--bg-elevated);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.map-room text {
+  fill: var(--text);
+  font-size: 11px;
+}
+
+.map-room-current rect {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.map-room-current text {
+  fill: var(--accent-contrast);
+}

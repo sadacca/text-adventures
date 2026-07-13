@@ -9,6 +9,7 @@ import {
 import { getLatestAutosave, writeAutosaveGeneration } from '../storage/autosaves.js';
 import { listSaves, readSave, writeSave, type SaveSummary } from '../storage/saves.js';
 import { appendTranscriptEntry, getTranscript } from '../storage/transcripts.js';
+import { useMapStore } from './mapStore.js';
 
 /**
  * Bocfel prints its own "[Starting/End of history playback]" scrollback replay as part
@@ -121,13 +122,23 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     let resuming = false;
 
     const unsubscribeEvents = engine.on((event) => {
+      const isSilent = 'silent' in event && event.silent;
+
+      // Automapper (Task 1.6) wants every *real* event, but never a silent one: a
+      // resuming session's Bocfel "history playback" actually re-sends every historical
+      // command (autosave noise included, per Task 1.5's outcome notes below) as a burst
+      // of silent status_lines, and replaying that against a graph already loaded at its
+      // final state would scramble it (spurious teleport flags, wrong current-room
+      // hops). The per-turn silent autosave's own save/restore round-trip is harmless to
+      // skip too — it never actually moves the player.
+      if (!isSilent) useMapStore.getState().handleEvent(event);
+
       if (event.kind === 'command') {
         pendingCommand = event.text;
         pendingResponseChunks = [];
         return;
       }
 
-      const isSilent = 'silent' in event && event.silent;
       if (isSilent && !resuming) return; // background autosave noise, not for display
 
       if (event.kind === 'buffer_text') {
@@ -204,6 +215,10 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     if (latestAutosave) engine.preloadAutosave(latestAutosave.snapshot);
     resuming = latestAutosave !== null;
 
+    // Load (or create) this game's map before any events can arrive, so the automapper
+    // is ready the instant engine.start() begins producing them.
+    await useMapStore.getState().loadForGame(gameId);
+
     await engine.start(new Uint8Array(game.bytes), { autorestore: latestAutosave !== null });
     // By now the whole restore has fully settled — engine.ts's busy/ready queue
     // guarantees start() doesn't resolve early. Rebuild the visible scrollback from our
@@ -226,6 +241,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
 
   closeGame() {
     teardownActiveSession();
+    useMapStore.getState().reset();
     set({
       gameId: null,
       gameTitle: '',

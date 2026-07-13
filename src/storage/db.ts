@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import type { MapGraph } from '../map/graph.js';
 
 export interface GameRecord {
   gameId: string;
@@ -48,8 +49,7 @@ interface TextAdventuresDb extends DBSchema {
   games: { key: string; value: GameRecord };
   autosaves: { key: [string, number]; value: AutosaveRecord };
   saves: { key: [string, string]; value: SaveRecord };
-  // MapGraph shape lands with Task 1.6; stored as an opaque JSON-serializable value until then.
-  maps: { key: string; value: unknown };
+  maps: { key: string; value: MapGraph & { gameId: string } };
   transcripts: { key: string; value: TranscriptRecord };
   settings: { key: string; value: SettingsRecord };
 }

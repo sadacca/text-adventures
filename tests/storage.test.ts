@@ -4,6 +4,8 @@ import { addOrTouchGame, deleteGame, getGame, listGames } from '../src/storage/g
 import { getLatestAutosave, writeAutosaveGeneration } from '../src/storage/autosaves';
 import { deleteSave, listSaves, readSave, writeSave } from '../src/storage/saves';
 import { appendTranscriptEntry, getTranscript } from '../src/storage/transcripts';
+import { deleteMap, getMap, saveMap } from '../src/storage/maps';
+import { createEmptyGraph } from '../src/map/graph';
 
 function bytes(seed: number, length = 32): Uint8Array {
   const arr = new Uint8Array(length);
@@ -115,5 +117,32 @@ describe('transcripts', () => {
     expect(entries).toHaveLength(2000);
     expect(entries[0].turn).toBe(2);
     expect(entries[entries.length - 1].turn).toBe(2001);
+  });
+});
+
+describe('maps', () => {
+  it('returns an empty graph for a game with no saved map', async () => {
+    expect(await getMap('never-mapped')).toEqual(createEmptyGraph());
+  });
+
+  it('round-trips a graph and does not leak the storage-only gameId field', async () => {
+    const gameId = 'game-map-roundtrip';
+    const graph = createEmptyGraph();
+    graph.rooms['kitchen'] = {
+      id: 'kitchen',
+      name: 'Kitchen',
+      pos: { x: 0, y: 0 },
+      posLocked: false,
+      flags: {},
+    };
+    graph.currentRoomId = 'kitchen';
+
+    await saveMap(gameId, graph);
+    const read = await getMap(gameId);
+    expect(read).toEqual(graph);
+    expect('gameId' in read).toBe(false);
+
+    await deleteMap(gameId);
+    expect(await getMap(gameId)).toEqual(createEmptyGraph());
   });
 });
