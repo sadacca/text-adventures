@@ -1,3 +1,5 @@
+import type { RawMessage } from './protocol-tap.js';
+
 /**
  * Events emitted by the protocol tap. All features consume ONLY these.
  *
@@ -30,6 +32,14 @@ export interface EngineHandle {
   on(listener: (e: GameEvent) => void): () => void; // returns unsubscribe
   saveAutosave(): Promise<Uint8Array>; // opaque snapshot blob
   stop(): Promise<void>;
+
+  // --- Added in Task 1.4 (protocol tap fixture recording — not in the original
+  // SPECS.md draft, which didn't anticipate needing raw wire access from the UI) ---
+
+  /** Every raw RemGlk/GlkOte wire message, tagged with direction, exactly as observed —
+   *  what DebugConsole's "record fixture" toggle buffers and downloads as `.jsonl`
+   *  (see `protocol-tap.ts`'s `RawMessage` and SPECS.md §6's fixture format). */
+  onRaw(listener: (raw: RawMessage) => void): () => void;
 
   // --- Added in Task 1.5 (not part of the original SPECS.md draft) ---
 

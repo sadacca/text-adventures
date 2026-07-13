@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createEngine } from '../engine/engine.js';
-import type { EngineHandle } from '../engine/types.js';
+import type { RawMessage } from '../engine/protocol-tap.js';
+import type { EngineHandle, GameEvent } from '../engine/types.js';
 import {
   getGame,
   restartPlaythrough as storageRestartPlaythrough,
@@ -9,7 +10,14 @@ import {
 import { getLatestAutosave, writeAutosaveGeneration } from '../storage/autosaves.js';
 import { listSaves, readSave, writeSave, type SaveSummary } from '../storage/saves.js';
 import { appendTranscriptEntry, getTranscript } from '../storage/transcripts.js';
+import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
 import { useMapStore } from './mapStore.js';
+
+/** DebugConsole's live event feed (Task 1.4): capped so a long session can't leak memory. */
+const DEBUG_EVENT_LIMIT = 300;
+
+/** Task 1.8 tap-to-travel outcome, per SPECS.md §3's abort conditions. */
+export type TravelResult = 'completed' | 'blocked' | 'question' | 'char_input';
 
 /**
  * Bocfel prints its own "[Starting/End of history playback]" scrollback replay as part
@@ -49,18 +57,41 @@ interface EngineState {
    *  fileref prompt resolves to that save instead of asking the player to pick one. */
   pendingRestoreName: string | null;
 
+  /** Task 1.4: DebugConsole's live GameEvent feed, newest last, capped at DEBUG_EVENT_LIMIT. */
+  debugEvents: GameEvent[];
+  /** Task 1.4: recording toggle — while true, every raw RemGlk message is buffered for
+   *  "record fixture" download; false the rest of the time so idle play doesn't grow
+   *  an unbounded buffer. */
+  recordingFixture: boolean;
+  startRecordingFixture: () => void;
+  /** Stops recording and returns the buffered messages as fixture JSON Lines text
+   *  (SPECS.md §6 format), ready to save/download. */
+  stopRecordingFixture: () => string;
+
+  /** Task 1.8: true while tap-to-travel is driving the engine turn-by-turn — gates the
+   *  rest of the input UI (compass/chips/command bar) so the player can't stack a
+   *  manual command mid-trip. */
+  traveling: boolean;
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
   restoreNamed: (name: string) => void;
   refreshSaves: () => Promise<void>;
   restartPlaythrough: () => Promise<void>;
+  /** Task 1.8 tap-to-travel: sends `path`'s moves one at a time, waiting for each
+   *  resulting turn to fully settle before sending the next, and aborts immediately if
+   *  a response deviates from what the map expects (SPECS.md §3): the room reached
+   *  isn't the step's expected room, any buffer_text line ends in '?' (a prompt/
+   *  question), or the next input request is `char` (not `line`). */
+  travelTo: (path: TravelStep[]) => Promise<TravelResult>;
 }
 
 let activeEngine: EngineHandle | null = null;
 let activeCleanup: (() => void) | null = null;
 let activeGameId: string | null = null;
 let lastKnownTurn = 0;
+let recordedRaw: RawMessage[] = [];
 
 function teardownActiveSession() {
   activeCleanup?.();
@@ -81,6 +112,21 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   loading: false,
   error: null,
   pendingRestoreName: null,
+  debugEvents: [],
+  recordingFixture: false,
+  traveling: false,
+
+  startRecordingFixture() {
+    recordedRaw = [];
+    set({ recordingFixture: true });
+  },
+
+  stopRecordingFixture() {
+    set({ recordingFixture: false });
+    const jsonl = recordedRaw.map((raw) => JSON.stringify(raw)).join('\n') + '\n';
+    recordedRaw = [];
+    return jsonl;
+  },
 
   async openGame(gameId) {
     teardownActiveSession();
@@ -92,6 +138,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       status: null,
       inputType: null,
       saves: [],
+      debugEvents: [],
     });
 
     const game = await getGame(gameId);
@@ -120,6 +167,19 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     // reconstructed from our own `transcripts` store instead, right after `start()`
     // resolves (see below) — only the live status line is trusted from the replay.
     let resuming = false;
+
+    const unsubscribeDebugEvents = engine.on((event) => {
+      set((s) => ({
+        debugEvents:
+          s.debugEvents.length >= DEBUG_EVENT_LIMIT
+            ? [...s.debugEvents.slice(1), event]
+            : [...s.debugEvents, event],
+      }));
+    });
+
+    const unsubscribeRaw = engine.onRaw((raw) => {
+      if (get().recordingFixture) recordedRaw.push(raw);
+    });
 
     const unsubscribeEvents = engine.on((event) => {
       const isSilent = 'silent' in event && event.silent;
@@ -208,6 +268,8 @@ export const useEngineStore = create<EngineState>((set, get) => ({
 
     activeCleanup = () => {
       unsubscribeEvents();
+      unsubscribeDebugEvents();
+      unsubscribeRaw();
       unsubscribeNamedSave();
     };
 
@@ -242,6 +304,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   closeGame() {
     teardownActiveSession();
     useMapStore.getState().reset();
+    recordedRaw = [];
     set({
       gameId: null,
       gameTitle: '',
@@ -249,6 +312,8 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       status: null,
       inputType: null,
       saves: [],
+      debugEvents: [],
+      recordingFixture: false,
     });
   },
 
@@ -274,6 +339,39 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     teardownActiveSession();
     await storageRestartPlaythrough(gameId);
     await get().openGame(gameId);
+  },
+
+  async travelTo(path) {
+    if (!activeEngine || path.length === 0) return 'completed';
+    const engine = activeEngine;
+    set({ traveling: true });
+    try {
+      for (const step of path) {
+        let bufferedText = '';
+        // Each step must fully settle (see engine.ts's own busy/ready queue note)
+        // before the next one is sent, so this loop is deliberately sequential.
+        const stepResult = await new Promise<'ok' | 'question' | 'char_input'>((resolve) => {
+          const unsubscribe = engine.on((event) => {
+            const isSilent = 'silent' in event && event.silent;
+            if (isSilent) return; // shouldn't happen mid-travel, but never act on it
+            if (event.kind === 'buffer_text') {
+              bufferedText += event.text;
+            } else if (event.kind === 'input_requested') {
+              unsubscribe();
+              if (event.type === 'char') resolve('char_input');
+              else resolve(bufferTextEndsInQuestion(bufferedText) ? 'question' : 'ok');
+            }
+          });
+          engine.sendCommand(step.dir);
+        });
+
+        if (stepResult !== 'ok') return stepResult;
+        if (useMapStore.getState().graph.currentRoomId !== step.roomId) return 'blocked';
+      }
+      return 'completed';
+    } finally {
+      set({ traveling: false });
+    }
   },
 }));
 

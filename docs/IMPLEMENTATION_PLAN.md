@@ -334,6 +334,42 @@ contents), `buffer_text` (main window text runs), `input_requested`. Unit-test t
 parsing against captured protocol fixtures (record a short play session to JSON and
 commit it as a fixture). Acceptance: a debug console pane shows the live event stream.
 
+**Outcome (2026-07-13): done.** The RemGlk-JSON-to-`GameEvent` parsing that used to live
+directly inside `glkote-bridge.ts` (Task 1.3's first-cut tap) was extracted into a pure,
+engine-agnostic `src/engine/protocol-tap.ts` (`ProtocolTap`): `handleUpdate(data)` for
+every interpreter->UI message, `handleEvent(ev, {silent})` for every UI->interpreter
+message, both taking an optional `onRaw` callback that observes the message unmodified
+(SPECS.md §6's `{"dir":"out"|"in","msg":{...}}` shape) before anything else happens to
+it. `glkote-bridge.ts` is now just the GlkOteBase-specific plumbing (choosing which
+window id to address); `update()`/`send_event()` hand every message to the tap first.
+`EngineHandle` grew an `onRaw` method (documented in SPECS.md's own copy) so the UI layer
+can observe the wire-level stream without reaching into engine internals.
+
+- **Fixtures**: real Bocfel sessions against `advent.z5` (public-domain Adventure,
+  `curiousdannii/asyncglk`'s own test fixture), captured via a one-off Node harness
+  driving `createEngine()` directly (same "no browser needed" trick Task 1.3's
+  race-condition spike used) and dumping every `onRaw` message. Committed under
+  `tests/fixtures/`: `walk15.jsonl` (15-turn walk, movement + inventory + two parser
+  errors), `blocked-and-dark.jsonl` (a real blocked exit — "You don't fit through a
+  two-inch slit!", room unchanged — and a real dark room, whose status line literally
+  reads "Darkness"), `save-restore.jsonl` (named SAVE / move / move back / RESTORE,
+  including Bocfel's own history-playback replay text passing through unmodified).
+  **Deviation from §6's suggested fixture set**: a v3 game file wasn't available under
+  this session's network policy (only `advent.z5`, a v5 game, was reachable); since the
+  wire protocol shape doesn't depend on Z-machine version, all three fixtures use
+  `advent.z5` — still real blocked-exit/dark-room/save-restore behavior, just not from a
+  v3 binary specifically.
+- **Tests**: `tests/protocol-tap.test.ts` replays the three fixtures with `replayFixture()`
+  (no WASM/interpreter involved) and asserts the exact `GameEvent` sequence, plus direct
+  `ProtocolTap` unit cases (quit-on-disable, error/pass/retry are inert, raw-message
+  observation, silent commands don't advance the turn counter or emit `command`).
+- **DebugConsole** (`src/debug/DebugConsole.tsx`): live event stream (subscribes to a new
+  capped ring buffer, `engineStore.debugEvents`), plus the "record fixture" toggle
+  (`engineStore.recordingFixture`/`startRecordingFixture`/`stopRecordingFixture`, buffering
+  `onRaw` messages only while armed) that downloads a `.jsonl` via a Blob URL. Hidden
+  behind a settings toggle in MoreScreen ("Debug console (Story tab)"); rendered at the
+  bottom of the Story tab when enabled.
+
 ### Task 1.5 — Autosave and saves (gating requirement — see §1.6)
 - **Autosave (the priority)**: using the hook proven in Task 1.3, snapshot interpreter
   state to IndexedDB after **every turn** and on `visibilitychange`/`pagehide` (the
@@ -442,6 +478,49 @@ Acceptance (mobile emulation + real device): traverse 10 rooms, pick up two obje
 and check inventory **without typing a single character**; when typing "xyzzy", no
 autocorrect interference and the input stays visible.
 
+**Outcome (2026-07-13): done, with one real cross-feature bug found and fixed via a
+mobile-viewport Playwright pass against a live game (`advent.z5`).**
+
+- **New components**: `story/CommandBar.tsx` (soft-keyboard-correct input — never
+  `disabled`, only its Send button is, so focus/keyboard never drops across a submit;
+  `useKeyboardInset.ts`'s `visualViewport` hook keeps it pinned above the keyboard; a
+  history popover plus a swipe-up gesture on the input, backed by `uiStore.commandHistory`),
+  `story/VerbChips.tsx` (look/take/drop/open/examine/inventory/wait/again — no-object
+  verbs send immediately, object verbs insert the verb + request focus via a new
+  `uiStore.focusRequestId` signal), `story/CompassRose.tsx` (48px collapsed fab -> 3×3 +
+  U/D/IN/OUT grid; known exits from the current room, read live from `mapStore`, get a
+  `.compass-known` highlight), `story/TapWords.tsx` (wraps the transcript, makes every
+  word tappable -> appends to the shared draft).
+- **Shared draft state moved to `uiStore`** (`commandDraft`/`setCommandDraft`/
+  `appendToDraft` already existed from the Task 1.1 scaffold but were unused until now)
+  so CommandBar/VerbChips/TapWords/CompassRose can all read and write the same
+  in-progress command without prop-drilling.
+- **Real bug found via Playwright, not by inspection**: the expanded CompassRose was
+  originally `position: absolute` over the bottom-right corner of the transcript (a
+  common FAB pattern) — but an absolutely-positioned element's full rectangular box
+  intercepts pointer events even where it's visually just background, which silently ate
+  taps on any tap-word text that scrolled underneath its corner. Confirmed by driving
+  "expand compass, then tap a word directly under it" in a real browser and watching
+  Playwright's own click-retry log report `<div class="compass-rose">... intercepts
+  pointer events`. Fixed by docking the compass as a real flex column (`.story-body`
+  became `display:flex` with the transcript as a stretched, flexible item and the
+  compass as a `flex-shrink:0` sibling) instead of an overlay — this reserves genuine
+  layout space, so it can structurally never sit on top of tappable text again, rather
+  than relying on padding/z-index tricks that would only reduce the odds.
+- **Verification**: Playwright at 390×844 driving the real `StoryScreen`/`MapScreen`
+  against `advent.z5` — verb chip "Look" sends immediately; compass expand + "Go n"
+  moves and updates the status line; a tap-word directly under the still-expanded
+  compass is clickable (regression check for the bug above); "Take" chip + tapping
+  "lamp" in the room description composes the draft to exactly `"take lamp"` and sends
+  it, and the object is actually taken (confirmed via the map/transcript in the same
+  pass — see Task 1.8's outcome notes); autocapitalize/autocorrect/spellcheck read
+  `off`/`off`/`false` on the live input.
+- Not automated in Playwright (would need a real Android device per §1.6): the
+  `visualViewport` keyboard-inset behavior and swipe-up history gesture are implemented
+  per the same technique documented in this section, but only unit-tested (the popover
+  opens and refills the draft — `tests/story-ui.test.tsx`), not verified against a real
+  soft keyboard.
+
 ### Task 1.8 — Auto-map: layout + rendering + touch editing
 - Layout: compass directions map to grid offsets (up/down/in/out get diagonal or
   stacked-level treatment — pick one, document it); collision resolution by shifting;
@@ -458,6 +537,85 @@ autocorrect interference and the input stays visible.
 Acceptance: on mobile emulation, play 10+ rooms; map matches geography; pinch/pan/
 long-press editing works; tap-to-travel crosses 3+ rooms and stops correctly when
 blocked; manual fixes survive reload.
+
+**Outcome (2026-07-13): the rest of 1.8 (pan/zoom, long-press editing, tap-to-travel
+wiring, sticky-edit UI) done, on top of the minimal SVG rendering already built alongside
+Task 1.6.**
+
+- **Pan/pinch (Pointer Events)**: `MapScreen.tsx`'s SVG root tracks active pointers in a
+  ref-backed `Map`; one pointer pans, two pointers pinch-zoom (scale clamped to
+  0.4–3×, midpoint-tracked so the zoom roughly follows the pinch center). Implemented as
+  a `<g transform="translate(...) scale(...)">` layered *underneath* a separate, frozen
+  "home" viewBox that auto-fits explored rooms once per game (via a `lastFitGameId` ref)
+  rather than on every graph mutation — recomputing the fit viewBox on every new room
+  would otherwise fight the player's own pan/zoom mid-gesture. A "⤢ Fit" button
+  recomputes the fit and resets pan/zoom on demand.
+- **Tap / long-press / drag, per room**: a single `roomGestureRef` (not per-render
+  closures) tracks whichever room is currently being pressed, because a drag's own
+  `setDragPreview` call triggers a React re-render mid-gesture — closures capturing local
+  `let dragging`/`longPressed` variables would silently reset on that re-render and the
+  *next* native pointer event would see stale state. A tap (short press, <10px of
+  movement) fires tap-to-travel; holding past 500ms without moving opens
+  `RoomEditSheet`; moving past the drag threshold before the long-press timer fires
+  drags the room (visually previewed locally, committed to `mapStore.moveRoom` — which
+  sets `posLocked` — only on release, so mid-drag pointermove events don't spam the
+  debounced IndexedDB save).
+- **`RoomEditSheet.tsx`** (long-press bottom sheet): rename / note / merge-into another
+  room / delete, all backed by four new pure `map/graph.ts` primitives —
+  `renameRoom`, `setRoomNote`, `deleteRoom`, `moveRoom` — added alongside the existing
+  `mergeRooms`, each with a `tests/graph.test.ts` case. **Renaming reuses the alias
+  mechanism** `mergeRooms` already established for rule 7: since room *matching* is
+  purely name-based (rule 8), a bare rename would strand future arrivals under the
+  room's original status-line name (no existing room to find by that name -> a stray
+  duplicate). `renameRoom` therefore also records the pre-rename name as an alias to the
+  same room id. **Deletion is deliberately not permanently sticky by name** (unlike
+  `userDeleted` edges / `posLocked` positions / merge aliases): it tombstones every edge
+  touching the room and removes the node, but if the player revisits that same
+  status-line room later, the automapper just rediscovers it fresh — there's no rule
+  requiring "this name can never be mapped again," and permanently blacklisting a name
+  would make deleting a wrongly-split Maze duplicate (the actual expected use case)
+  behave surprisingly on a later, legitimate revisit.
+- **Tap-to-travel wiring**: `engineStore.ts` grew a `travelTo(path)` action (plus a
+  `traveling` boolean gating the rest of the input UI mid-trip) that sends each
+  `TravelStep`'s direction and waits for that turn to fully settle before sending the
+  next — implemented as its own temporary `engine.on` listener per step, resolved on
+  `input_requested` — then checks, in order: was the next input a `char` prompt (abort
+  `'char_input'`); did any buffered `buffer_text` line end in `?` (abort `'question'`,
+  via Task 1.8's already-existing `bufferTextEndsInQuestion` from `travel.ts`); does
+  `mapStore`'s (already-updated, by the time `input_requested` fires — the automapper's
+  listener runs first since it was subscribed earlier in `engine.on`'s insertion-ordered
+  listener set) `currentRoomId` match the step's expected room (abort `'blocked'`
+  otherwise). `MapScreen.handleRoomTap` computes the BFS path via the existing
+  `computePath`, shows the existing `isLongTrip` confirm dialog for trips over 8 moves,
+  calls `travelTo`, and surfaces the result (or "no known path yet" if `computePath`
+  returns null) as a short-lived toast.
+- **Verification — two complementary passes**, because this game's own geography turned
+  out to be a poor deterministic fixture for scripting a guaranteed-success travel (see
+  below):
+  1. **Live Playwright pass** (390×844, real Bocfel + `advent.z5`): pan gesture runs
+     without error; long-pressing a room opens the edit sheet, and renaming it updates
+     the map immediately (persistence-across-reload is Task 1.6's own debounced-save
+     test, not re-verified here); tapping a room reachable only via a still-*inferred* edge
+     correctly refuses with "No known path to that room yet." — which is exactly
+     correct per the BFS's confirmed-edges-only contract, not a bug (discovered while
+     trying to script a happy-path demo: `advent`'s "Forest" rooms turned out to have
+     non-deterministic exits turn-to-turn in the underlying game, making them a poor
+     fixture for scripting *any* guaranteed outcome, success or failure, without
+     controlling the interpreter directly).
+  2. **Deterministic `engineStore.travelTo` unit tests** (`tests/travelTo.test.ts`), which
+     is what actually pins down the happy-path and every abort condition: a fake
+     `EngineHandle` (mocked in for `createEngine`) whose `sendCommand` synchronously
+     emits a pre-scripted response, driven through the real `openGame`/automapper/
+     `mapStore` stack (so room ids and edge confirmation come from real rule 1/3 logic,
+     not hand-guessed) and then a real `computePath`. Covers: completes and sends the
+     expected command for a real confirmed A<->B edge; aborts `'blocked'` on a
+     room-mismatch; aborts `'question'` on a `?`-ending buffer line; aborts
+     `'char_input'` on a char-type prompt; a no-op for an already-there (empty) path.
+- Not verified end-to-end on a real device (would need Task 1.9's on-device pass):
+  pinch-zoom's two-finger gesture (Playwright's `mouse` API only drives one pointer at a
+  time; a full multi-touch pinch would need `page.touchscreen` or CDP-level dispatch),
+  and the 8-move long-trip confirm dialog (logically wired to the same `window.confirm`
+  pattern already used elsewhere, but not exercised in this pass).
 
 ### Task 1.9 — Polish & offline
 Dark/light theme, font-size control (reading comfort on phones), service worker caches

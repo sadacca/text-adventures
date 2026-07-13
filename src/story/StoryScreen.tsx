@@ -1,5 +1,10 @@
-import { useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
+import { useUiStore } from '../state/uiStore';
+import { CommandBar } from './CommandBar';
+import { CompassRose } from './CompassRose';
+import { VerbChips } from './VerbChips';
+import { TapWords } from './TapWords';
+import { DebugConsole } from '../debug/DebugConsole';
 
 export function StoryScreen() {
   const gameId = useEngineStore((s) => s.gameId);
@@ -8,9 +13,7 @@ export function StoryScreen() {
   const error = useEngineStore((s) => s.error);
   const transcript = useEngineStore((s) => s.transcript);
   const status = useEngineStore((s) => s.status);
-  const inputType = useEngineStore((s) => s.inputType);
-  const sendCommand = useEngineStore((s) => s.sendCommand);
-  const [draft, setDraft] = useState('');
+  const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
 
   if (!gameId) {
     return (
@@ -19,12 +22,6 @@ export function StoryScreen() {
         <p>No game loaded. Pick one from the Library tab.</p>
       </div>
     );
-  }
-
-  function submit() {
-    if (!draft.trim() || inputType !== 'line') return;
-    sendCommand(draft);
-    setDraft('');
   }
 
   return (
@@ -38,29 +35,13 @@ export function StoryScreen() {
           <span>{status.right}</span>
         </div>
       )}
-      <pre className="story-transcript">{transcript}</pre>
-      <form
-        className="command-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <input
-          type="text"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          enterKeyHint="send"
-          disabled={inputType !== 'line'}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={inputType === 'line' ? 'Enter a command…' : 'Waiting…'}
-        />
-        <button type="submit" className="tap-target" disabled={inputType !== 'line'}>
-          Send
-        </button>
-      </form>
+      <div className="story-body">
+        <TapWords text={transcript} />
+        <CompassRose />
+      </div>
+      <VerbChips />
+      <CommandBar />
+      {debugConsoleEnabled && <DebugConsole />}
     </div>
   );
 }

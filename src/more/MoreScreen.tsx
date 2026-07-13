@@ -1,4 +1,5 @@
 import { useEngineStore } from '../state/engineStore';
+import { useUiStore } from '../state/uiStore';
 import { deleteSave, exportSave, importSave } from '../storage/saves';
 
 function formatDate(ms: number): string {
@@ -17,12 +18,29 @@ export function MoreScreen() {
   const sendCommand = useEngineStore((s) => s.sendCommand);
   const restoreNamed = useEngineStore((s) => s.restoreNamed);
   const refreshSaves = useEngineStore((s) => s.refreshSaves);
+  const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
+  const setDebugConsoleEnabled = useUiStore((s) => s.setDebugConsoleEnabled);
+
+  const settingsSection = (
+    <section>
+      <h2>Settings</h2>
+      <label className="settings-row">
+        <span>Debug console (Story tab)</span>
+        <input
+          type="checkbox"
+          checked={debugConsoleEnabled}
+          onChange={(e) => setDebugConsoleEnabled(e.target.checked)}
+        />
+      </label>
+    </section>
+  );
 
   if (!gameId) {
     return (
       <div className="screen">
         <h1>More</h1>
-        <p>Open a game from the Library to see its saves, settings, and about info.</p>
+        {settingsSection}
+        <p>Open a game from the Library to see its saves.</p>
       </div>
     );
   }
@@ -41,6 +59,7 @@ export function MoreScreen() {
   return (
     <div className="screen">
       <h1>More</h1>
+      {settingsSection}
 
       <section>
         <h2>Saves — {gameTitle}</h2>

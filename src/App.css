@@ -77,12 +77,152 @@
 
 .story-transcript {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  align-self: stretch;
   overflow-y: auto;
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: inherit;
   margin: 8px 0;
+}
+
+.story-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.tap-word {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.tap-word:active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.verb-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  flex-shrink: 0;
+}
+
+.chip {
+  flex-shrink: 0;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  white-space: nowrap;
+}
+
+.chip:disabled {
+  opacity: 0.5;
+}
+
+/*
+ * Compass rose: Task 1.7 wants it "persistent" and compact, which reads as a floating
+ * corner FAB — but docking it as its own flex column (sibling of the transcript, via
+ * `.story-body`'s flexbox) instead of `position: absolute` over the text turned out to
+ * matter functionally, not just stylistically: an absolutely-positioned overlay's whole
+ * rectangular box intercepts pointer events even where visually just background, which
+ * silently ate taps on any tap-word text that scrolled underneath its corner — found by
+ * a Playwright pass driving both features together. Docking it in the flex flow instead
+ * reserves real layout space, so it can never sit on top of tappable text.
+ */
+.compass-fab {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 22px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.compass-rose {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.compass-collapse {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  min-width: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.compass-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  grid-template-rows: repeat(3, 40px);
+  gap: 4px;
+}
+
+.compass-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
+}
+
+.compass-button {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  min-width: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 15px;
+  padding: 0;
+}
+
+.compass-button:disabled {
+  opacity: 0.4;
+}
+
+.compass-known {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.command-bar {
+  flex-shrink: 0;
+}
+
+.command-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 2px;
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
 .command-form {
@@ -96,6 +236,47 @@
   min-width: 0;
   padding: 10px;
   font-size: 16px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.debug-console {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  padding: 8px;
+  max-height: 30vh;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.debug-console-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-bottom: 6px;
+}
+
+.debug-console-log {
+  margin: 0;
+  padding: 0 0 0 18px;
+  overflow-y: auto;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+
+.debug-console-turn {
+  color: var(--text-dim);
 }
 
 .upload-button {
@@ -186,4 +367,108 @@
 
 .map-room-current text {
   fill: var(--accent-contrast);
+}
+
+.map-room {
+  cursor: pointer;
+}
+
+.map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.map-header h1 {
+  margin: 0;
+}
+
+.map-toast {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 56px;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  max-width: 80%;
+  text-align: center;
+}
+
+.room-edit-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  z-index: 10;
+}
+
+.room-edit-sheet {
+  width: 100%;
+  background: var(--bg-elevated);
+  border-radius: 16px 16px 0 0;
+  padding: 16px;
+  padding-bottom: calc(16px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.room-edit-sheet h2 {
+  margin: 0;
+}
+
+.room-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.room-edit-field input,
+.room-edit-field textarea,
+.room-edit-field select {
+  font-size: 16px;
+  color: var(--text);
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.room-edit-merge-row {
+  display: flex;
+  gap: 8px;
+}
+
+.room-edit-merge-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.room-edit-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.room-edit-actions button {
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.room-edit-actions button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
 }
