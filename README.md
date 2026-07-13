@@ -32,9 +32,13 @@ npm run build      # tsc -b && vite build
 Verify at a mobile viewport (390×844) during development; a real Android Chrome check
 closes out each phase-1 task per the plan.
 
-Deployment is automatic via `.github/workflows/deploy.yml` on push to `main`, publishing
-to GitHub Pages (must be enabled once in repo settings: Settings → Pages → Source →
-GitHub Actions).
+Deployment is automatic via `.github/workflows/deploy.yml` on push to `main` or
+`claude/infocom-text-adventure-emulator-32pzp3` (the latter is the branch actually
+serving as trunk — see IMPLEMENTATION_PLAN.md), publishing to GitHub Pages. This
+requires two one-time manual steps in repo settings: enable Pages (Settings → Pages →
+Source → GitHub Actions), and make sure the `github-pages` deployment environment
+(Settings → Environments → github-pages → "Deployment branches and tags") allows
+deploys from whichever of those branches you push to.
 
 ## Story files
 

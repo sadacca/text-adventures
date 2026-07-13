@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, claude/infocom-text-adventure-emulator-32pzp3]
 
 jobs:
   check:
