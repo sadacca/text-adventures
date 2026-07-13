@@ -206,6 +206,15 @@ round-trip. Unit tests replay fixtures through the protocol tap and assert the e
   manual bridge).
 - WASM must be served from the site itself with correct `application/wasm` type
   (GitHub Pages does this) and precached by the service worker.
+- **Gotcha (found 2026-07-13):** emglken's `bocfel.js` has an internal fallback that
+  requests its own `.wasm` by an unhashed literal filename, which the production build
+  never emits (Vite only emits the content-hashed name). Left unhandled, that request
+  404s and GitHub Pages' SPA-style fallback serves back `index.html`, permanently
+  stuck-on-loading. `vite.config.ts`'s `emglkenWasmFallback` plugin copies an unhashed
+  `bocfel.wasm` alongside the hashed one at build time so both URLs resolve. If emglken
+  is ever upgraded and this plugin is removed, re-verify with an actual `npm run build
+  && npm run preview` — `npm run dev` cannot catch this class of bug (see
+  IMPLEMENTATION_PLAN.md Task 1.3 outcome notes).
 - Local dev on desktop: `npm run dev`. On-phone testing before Pages is set up:
   `npm run dev -- --host` works for layout checks, but PWA/offline features only
   fully function on the HTTPS deployment (documented limitation, don't chase it).
@@ -219,11 +228,14 @@ scripts ☑ `vite-plugin-pwa` with base-aware manifest ☑ tab shell renders at 
 **1.2 Library** ☑ file picker accepts z3/z5/z8/dat/zblorb ☑ sha256 gameId dedupes
 re-uploads ☑ list sorted by lastPlayedAt ☑ delete confirms ☑ persists across reload.
 (Minimal implementation built alongside Task 1.5, which needed it as a substrate —
-no manual "mark room"/rename UI yet, no touch-target audit beyond the 44px CSS rule.)
+no manual "mark room"/rename UI yet, no touch-target audit beyond the 44px CSS rule.
+2026-07-13: the "Resume"-label-on-unplayed-game and dead-"Restart" bugs found in
+real-device verification are fixed — see PLAN outcome notes.)
 
 **1.3 Engine** ☑ emglken+asyncglk render a z5 AND a z3 game ☑ WASM served locally
-☑ autosave snapshot+restore spike proven ☑ decision-gate outcome recorded in PLAN
-☑ engine fully behind `EngineHandle`.
+(in dev *and* production — see 2026-07-13 outcome note in PLAN and the deploy gotcha
+in §7) ☑ autosave snapshot+restore spike proven ☑ decision-gate outcome recorded in
+PLAN ☑ engine fully behind `EngineHandle`.
 
 **1.4 Protocol tap** ☐ all messages observed unmodified ☐ GameEvent stream matches
 fixture expectations ☐ DebugConsole shows live events ☐ fixture recording works.
