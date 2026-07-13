@@ -292,6 +292,41 @@ mobile viewport against the real `StoryScreen` UI (a minimal file-picker + trans
 command form; the full mobile command UI is Task 1.7). `npm run lint`, `npm test`,
 `npm run build`, and `tsc -b` all pass.
 
+**Post-launch outcome (2026-07-13): two production bugs found and fixed during a real-device
+verification pass, neither caught by `npm test`/`npm run build` alone.**
+
+1. **Library screen: "Resume" shown for never-played games; "Restart" a no-op for
+   non-active games.** `LibraryScreen.tsx`'s play button was unconditionally labeled
+   "Resume" regardless of whether an autosave existed, and `onRestart`'s branch for a
+   game that wasn't the currently-open one only wiped its IndexedDB rows — it never
+   called `openGame`/`setTab('story')`, so clicking it appeared to do nothing. Fixed by
+   checking `getLatestAutosave` per game for the label ("Play" vs "Resume") and by
+   reopening the game after the wipe in both branches.
+2. **Story never loads in production — stuck on "Loading…" forever, dev server unaffected.**
+   emglken's bundled `bocfel.js` unconditionally sets its own `Module.locateFile`
+   (meant as a "single-file mode" fallback) *before* the bundler-friendly
+   `new URL('bocfel.wasm', import.meta.url)` call that Vite's production build
+   correctly rewrites to the content-hashed output filename. That default resolves to
+   an *unhashed* `bocfel.wasm` next to the built JS chunk — a filename the production
+   build never emits — so the request 404s, the static host's SPA fallback serves back
+   `index.html`, and `WebAssembly.instantiate` throws trying to parse HTML as wasm.
+   Nothing catches that throw inside `engine.ts`'s `start()`, so `openGame()` never
+   reaches `set({ loading: false })`. Invisible in `npm run dev` (which serves
+   `node_modules/emglken/build/bocfel.wasm` directly, unhashed, so the broken code path
+   still resolves correctly by accident) — only reproduces in a built-and-served
+   production bundle, which is why this needed an actual `npm run build && npm run
+   preview` repro, not just dev-server testing. Fixed with a build-time Vite plugin
+   (`emglkenWasmFallback` in `vite.config.ts`) that copies the real `bocfel.wasm`
+   alongside the hashed one so the unhashed request also 200s. See SPECS.md §7 for the
+   deploy-time note this leaves behind.
+
+**Verification:** reproduced and fixed against a real ~113KB commercial Infocom v3 file
+(header-verified, sanity-checked against `dfrotz` first), driven through both the dev
+server and a `vite build && vite preview` production build via Playwright, including a
+fresh/incognito-equivalent browser context so no stale service-worker cache could mask
+the result. Full play → autosave → reopen (silent restore) cycle confirmed working in
+~1s end-to-end on the fixed production build.
+
 ### Task 1.4 — Protocol tap + event bus
 Wrap the GlkOte send/receive path so every RemGlk JSON message is observed (not
 modified). Emit typed events: `command` (user line input), `status_line` (grid window
