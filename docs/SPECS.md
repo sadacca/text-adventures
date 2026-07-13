@@ -85,8 +85,16 @@ export interface MapGraph {
   rooms: Record<string, RoomNode>;
   edges: RoomEdge[];       // uniqueness key: (from, dir)
   currentRoomId: string | null;
+  aliases: Record<string, string>;  // added in Task 1.6, see note below
 }
 ```
+
+**2026-07-13 addition (Task 1.6):** `MapGraph.aliases` maps a lowercased room name to the
+canonical room id it was merged into (rule 7: "user-merged rooms keep a merge alias
+table"). Populated by `mergeRooms()` in `src/map/graph.ts`; not in the original sketch
+above but required to make rule 7's third clause actually testable/implementable. Every
+room-name lookup checks `aliases` first, before the normal name-matching/disambiguation
+path.
 
 ## 2. Direction normalization table (`src/map/directions.ts`)
 
@@ -246,15 +254,33 @@ fixture-based test suite and DebugConsole this task calls for.)
 reopen resumes with scrollback ☑ 3-generation pruning ☑ in-game SAVE/RESTORE
 round-trip ☑ Quetzal export/import ☑ transcript ring-buffer persists.
 
-**1.6 Graph** ☐ vitest case per rule in §3 (8 rules + travel abort conditions)
-☐ serialization round-trip ☐ debounced persistence.
+**1.6 Graph** ☑ vitest case per rule in §3 (8 rules; `tests/graph.test.ts`) + BFS
+pathfinding and the two pure travel-abort checks — question-line detection and the
+long-trip threshold — in `tests/travel.test.ts` (the room-mismatch and char-input abort
+conditions need a live engine to observe and are deferred to whenever tap-to-travel gets
+wired into the UI, see 1.8 note) ☑ serialization round-trip ☑ debounced (500 ms)
+persistence (`src/state/mapStore.ts`).
+(2026-07-13: implemented directly, skipping ahead of 1.4/1.7 per owner request — see
+IMPLEMENTATION_PLAN.md outcome notes. `src/map/graph.ts`, `directions.ts`, `travel.ts`;
+storage in `src/storage/maps.ts`.)
 
 **1.7 Command input** ☐ no-typing traversal test passes ☐ keyboard stays open across
 sends ☐ input visible above keyboard (visualViewport) ☐ "xyzzy" survives uncorrected
 ☐ tap-a-word appends ☐ history accessible.
 
-**1.8 Map UI** ☐ pan/pinch/tap/long-press/drag all touch-verified ☐ inferred edges
-dashed ☐ tap-to-travel with abort + long-trip warning ☐ user edits sticky across reload.
+**1.8 Map UI** ☑ minimal SVG rendering only (2026-07-13): rooms as boxes (current room
+highlighted), edges as lines (dashed only when *no* direction between a pair is
+confirmed yet), simple deterministic grid layout (`src/map/layout.ts`) wired live to
+real gameplay through `mapStore`/`engineStore`. Verified end-to-end against `advent.z5`
+(Playwright, 390×844) — see run notes; screenshot showed 3 rooms/2 edges after a few
+moves including a correctly-ignored blocked move.
+☐ pan/pinch/tap/long-press/drag (no touch-editing yet — `posLocked`/`userDeleted`/merge
+are implemented and tested at the graph level in 1.6, just not wired to any gesture)
+☐ tap-to-travel (BFS + the two pure abort checks exist in `travel.ts`; sending the
+commands, catching the room-mismatch/char-input abort conditions live, and the toast/
+long-trip-confirm UI are not wired up) ☐ user edits sticky across reload (untested end-
+to-end without an editing UI to create edits with, though the underlying persistence
+round-trips per 1.6's tests).
 
 **1.9 Polish/offline** ☐ install prompt on Android Chrome via Pages URL ☐ airplane-mode
 reload works ☐ font-size control ☐ dark/light ☐ licenses screen (incl. Bocfel GPL-2.0
