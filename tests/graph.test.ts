@@ -3,8 +3,12 @@ import type { GameEvent } from '../src/engine/types';
 import {
   Automapper,
   createEmptyGraph,
+  deleteRoom,
   mergeRooms,
+  moveRoom,
   normalizeRoomName,
+  renameRoom,
+  setRoomNote,
   UNKNOWN_ROOM_ID,
   type MapGraph,
   type RoomNode,
@@ -273,6 +277,70 @@ describe('rule 7: user edits win, forever', () => {
     am.handleEvent(cmd('wave wand', 3));
     am.handleEvent(status('Larder', 3)); // arrival under the old, merged-away name
     expect(am.graph.currentRoomId).toBe('pantry');
+  });
+
+  it('renameRoom keeps a sticky alias so arrivals under the old name still resolve here', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Kitchen', 0));
+    renameRoom(am.graph, 'kitchen', 'Scullery');
+    expect(am.graph.rooms['kitchen'].name).toBe('Scullery');
+
+    am.handleEvent(cmd('north', 1));
+    am.handleEvent(status('Pantry', 1));
+    am.handleEvent(cmd('south', 2));
+    am.handleEvent(status('Kitchen', 2)); // game still calls it "Kitchen"; must land back here
+
+    expect(am.graph.currentRoomId).toBe('kitchen');
+    expect(am.graph.rooms['kitchen'].name).toBe('Scullery');
+  });
+
+  it('setRoomNote sets a free-text note the automapper never overwrites', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Kitchen', 0));
+    setRoomNote(am.graph, 'kitchen', 'has the knife');
+    am.handleEvent(cmd('north', 1));
+    am.handleEvent(status('Pantry', 1));
+    am.handleEvent(cmd('south', 2));
+    am.handleEvent(status('Kitchen', 2));
+    expect(am.graph.rooms['kitchen'].note).toBe('has the knife');
+  });
+
+  it('moveRoom locks the room so layout never repositions it (via computeLayout)', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Kitchen', 0));
+    moveRoom(am.graph, 'kitchen', { x: 9, y: 9 });
+    expect(am.graph.rooms['kitchen']).toMatchObject({
+      pos: { x: 9, y: 9 },
+      posLocked: true,
+    });
+  });
+
+  it('deleteRoom tombstones edges touching it and lets a later revisit re-discover it fresh', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Kitchen', 0));
+    am.handleEvent(cmd('north', 1));
+    am.handleEvent(status('Pantry', 1));
+    am.handleEvent(cmd('south', 2));
+    am.handleEvent(status('Kitchen', 2));
+
+    deleteRoom(am.graph, 'pantry');
+    expect(am.graph.rooms['pantry']).toBeUndefined();
+    expect(
+      am.graph.edges
+        .filter((e) => e.from === 'pantry' || e.to === 'pantry')
+        .every((e) => e.userDeleted),
+    ).toBe(true);
+
+    am.handleEvent(cmd('north', 3));
+    am.handleEvent(status('Pantry', 3)); // revisited: rediscovered as a fresh node
+    expect(am.graph.rooms['pantry']).toBeDefined();
+  });
+
+  it('deleteRoom refuses to delete the current room', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Kitchen', 0));
+    deleteRoom(am.graph, 'kitchen');
+    expect(am.graph.rooms['kitchen']).toBeDefined();
   });
 });
 

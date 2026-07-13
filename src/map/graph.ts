@@ -177,6 +177,59 @@ export function mergeRooms(graph: MapGraph, keepId: string, mergeId: string): vo
   if (graph.currentRoomId === mergeId) graph.currentRoomId = keepId;
 }
 
+/**
+ * Renames a room (Task 1.8's long-press "rename" action). Since arrival matching is
+ * purely name-based (rule 8), a bare rename would strand future arrivals under the
+ * room's *original* status-line name — they'd find no existing room by that name and
+ * create a stray duplicate. So this also records the old name as an alias to this room's
+ * id (the same mechanism `mergeRooms` uses for rule 7's "user edits win, forever"),
+ * meaning arrivals under either the old or new name resolve here from now on.
+ */
+export function renameRoom(graph: MapGraph, id: string, name: string): void {
+  const room = graph.rooms[id];
+  if (!room || !name.trim()) return;
+  graph.aliases[nameKey(room.name)] = id;
+  room.name = name.trim();
+  graph.aliases[nameKey(room.name)] = id;
+}
+
+/** Sets a room's free-text note (Task 1.8). Automapper never touches `note`, so this is
+ *  sticky by construction — no tombstone bookkeeping needed. */
+export function setRoomNote(graph: MapGraph, id: string, note: string): void {
+  const room = graph.rooms[id];
+  if (!room) return;
+  room.note = note || undefined;
+}
+
+/**
+ * Deletes a room and tombstones every edge touching it (Task 1.8's long-press "delete"
+ * action) — cleanup for mis-mapped/junk nodes (stray teleport targets, a wrongly-split
+ * Maze duplicate). Unlike `mergeRooms`/rule 7, this is deliberately NOT permanently
+ * sticky by name: there's no "this name is deleted forever" concept in the rules, so if
+ * the player revisits the same status-line room later, the automapper will simply
+ * re-discover it as a fresh node, same as if it had never been mapped. Refuses to
+ * delete the current room (there would be nothing left to anchor the map to).
+ */
+export function deleteRoom(graph: MapGraph, id: string): void {
+  if (!graph.rooms[id] || graph.currentRoomId === id) return;
+  for (const edge of graph.edges) {
+    if (edge.from === id || edge.to === id) edge.userDeleted = true;
+  }
+  delete graph.rooms[id];
+}
+
+/**
+ * Records a user drag (Task 1.8): sets the room's position and locks it so `computeLayout`
+ * treats it as a fixed anchor forever after (rule 7 — "posLocked positions never
+ * re-laid-out").
+ */
+export function moveRoom(graph: MapGraph, id: string, pos: { x: number; y: number }): void {
+  const room = graph.rooms[id];
+  if (!room) return;
+  room.pos = pos;
+  room.posLocked = true;
+}
+
 type Pending = { kind: 'move'; dir: Direction } | { kind: 'other' } | { kind: 'initial' };
 
 /**

@@ -1,6 +1,7 @@
 import Bocfel from 'emglken/build/bocfel.js';
 import { BridgeGlkOte } from './glkote-bridge.js';
 import { MemoryDialog } from './memory-dialog.js';
+import type { RawMessage } from './protocol-tap.js';
 import type { EngineHandle, GameEvent } from './types.js';
 
 const STORY_PATH = '/story.dat';
@@ -29,11 +30,17 @@ const namedSavePath = (name: string) => `/saves/named-${encodeURIComponent(name)
  */
 export function createEngine(): EngineHandle {
   const listeners = new Set<(e: GameEvent) => void>();
+  const rawListeners = new Set<(raw: RawMessage) => void>();
   const namedSaveWrittenListeners = new Set<(name: string, bytes: Uint8Array) => void>();
   const dialog = new MemoryDialog();
-  const glkote = new BridgeGlkOte((event) => {
-    for (const listener of listeners) listener(event);
-  });
+  const glkote = new BridgeGlkOte(
+    (event) => {
+      for (const listener of listeners) listener(event);
+    },
+    (raw) => {
+      for (const listener of rawListeners) listener(raw);
+    },
+  );
   let started = false;
   let namedSavePromptHandler:
     ((kind: 'save' | 'restore') => Promise<{ name: string; bytes?: Uint8Array } | null>) | null =
@@ -128,6 +135,11 @@ export function createEngine(): EngineHandle {
 
     on(listener) {
       return glkote_on(listener);
+    },
+
+    onRaw(listener) {
+      rawListeners.add(listener);
+      return () => rawListeners.delete(listener);
     },
 
     async saveAutosave() {

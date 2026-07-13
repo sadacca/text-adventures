@@ -53,6 +53,11 @@ export interface EngineHandle {
   // the engine can preload them before the interpreter's RESTORE reads the file).
   onNamedSavePrompt(handler: (kind: 'save' | 'restore') => Promise<{ name: string; bytes?: Uint8Array } | null>): void;
   onNamedSaveWritten(listener: (name: string, bytes: Uint8Array) => void): () => void;
+
+  // Added in Task 1.4. Every raw RemGlk/GlkOte wire message, tagged with direction,
+  // exactly as observed — what DebugConsole's "record fixture" toggle buffers and
+  // downloads as `.jsonl` (see engine/protocol-tap.ts's `RawMessage` and §6 below).
+  onRaw(listener: (raw: RawMessage) => void): () => void;
 }
 ```
 
@@ -245,10 +250,14 @@ real-device verification are fixed — see PLAN outcome notes.)
 in §7) ☑ autosave snapshot+restore spike proven ☑ decision-gate outcome recorded in
 PLAN ☑ engine fully behind `EngineHandle`.
 
-**1.4 Protocol tap** ☐ all messages observed unmodified ☐ GameEvent stream matches
-fixture expectations ☐ DebugConsole shows live events ☐ fixture recording works.
-(`glkote-bridge.ts` is a working first-cut tap per Task 1.3's note; still needs the
-fixture-based test suite and DebugConsole this task calls for.)
+**1.4 Protocol tap** ☑ all messages observed unmodified (`ProtocolTap.onRaw`, both
+directions) ☑ GameEvent stream matches fixture expectations (`tests/protocol-tap.test.ts`
+against `tests/fixtures/*.jsonl`) ☑ DebugConsole shows live events ☑ fixture recording
+works (record toggle -> `.jsonl` download).
+(2026-07-13: the RemGlk-parsing logic that lived directly in `glkote-bridge.ts` since
+Task 1.3 was extracted into a pure `src/engine/protocol-tap.ts`; see PLAN outcome notes
+for the fixture set and its one deviation — no v3 game file was reachable this session,
+so all three fixtures are `advent.z5` (v5) rather than the suggested v3 sample.)
 
 **1.5 Autosave/saves** ☑ snapshot every turn + visibilitychange/pagehide ☑ kill-tab →
 reopen resumes with scrollback ☑ 3-generation pruning ☑ in-game SAVE/RESTORE
@@ -264,9 +273,13 @@ persistence (`src/state/mapStore.ts`).
 IMPLEMENTATION_PLAN.md outcome notes. `src/map/graph.ts`, `directions.ts`, `travel.ts`;
 storage in `src/storage/maps.ts`.)
 
-**1.7 Command input** ☐ no-typing traversal test passes ☐ keyboard stays open across
-sends ☐ input visible above keyboard (visualViewport) ☐ "xyzzy" survives uncorrected
-☐ tap-a-word appends ☐ history accessible.
+**1.7 Command input** ☑ no-typing traversal test passes (verb chip + tap-word compose
+"take lamp" and it's actually taken — Playwright, 390×844) ☑ keyboard stays open across
+sends (input is never `disabled`, only its Send button) ☑ input visible above keyboard
+(visualViewport-derived inset in `useKeyboardInset.ts`; not verified on a real device —
+see PLAN outcome notes) ☑ "xyzzy" survives uncorrected (autocapitalize/autocorrect/
+spellcheck confirmed `off`/`off`/`false` on the live input) ☑ tap-a-word appends
+☑ history accessible (popover + swipe-up gesture on the input).
 
 **1.8 Map UI** ☑ minimal SVG rendering only (2026-07-13): rooms as boxes (current room
 highlighted), edges as lines (dashed only when *no* direction between a pair is
@@ -274,13 +287,20 @@ confirmed yet), simple deterministic grid layout (`src/map/layout.ts`) wired liv
 real gameplay through `mapStore`/`engineStore`. Verified end-to-end against `advent.z5`
 (Playwright, 390×844) — see run notes; screenshot showed 3 rooms/2 edges after a few
 moves including a correctly-ignored blocked move.
-☐ pan/pinch/tap/long-press/drag (no touch-editing yet — `posLocked`/`userDeleted`/merge
-are implemented and tested at the graph level in 1.6, just not wired to any gesture)
-☐ tap-to-travel (BFS + the two pure abort checks exist in `travel.ts`; sending the
-commands, catching the room-mismatch/char-input abort conditions live, and the toast/
-long-trip-confirm UI are not wired up) ☐ user edits sticky across reload (untested end-
-to-end without an editing UI to create edits with, though the underlying persistence
-round-trips per 1.6's tests).
+☑ pan/pinch/tap/long-press/drag (Pointer Events on the SVG root for pan/pinch, per-room
+handlers backed by a single `roomGestureRef` — not per-render closures, see PLAN outcome
+notes for why that mattered — for tap/long-press/drag; `RoomEditSheet.tsx` is the
+long-press rename/note/merge/delete UI) ☑ tap-to-travel (`engineStore.travelTo` sends
+the BFS path turn-by-turn and implements all three abort conditions — room mismatch,
+`?`-ending buffer text, char-type prompt — verified deterministically against a fake
+engine in `tests/travelTo.test.ts`, plus a live Playwright pass confirming the
+"no known path over an unconfirmed edge" refusal against a real graph) ☑ user edits
+sticky across reload (rename/delete/merge/moveRoom all go through the same
+`mapStore`/`saveMap` debounced-persistence path already covered by 1.6's tests; the
+live rename was also confirmed to update the on-screen map immediately in the
+Playwright pass).
+Not verified this session (needs a real device / multi-touch harness — see PLAN outcome
+notes): two-finger pinch-zoom and the >8-move long-trip confirm dialog.
 
 **1.9 Polish/offline** ☐ install prompt on Android Chrome via Pages URL ☐ airplane-mode
 reload works ☐ font-size control ☐ dark/light ☐ licenses screen (incl. Bocfel GPL-2.0
