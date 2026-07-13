@@ -2,7 +2,10 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # claude/infocom-text-adventure-emulator-32pzp3 is the branch actually serving as
+    # trunk (see IMPLEMENTATION_PLAN.md); main was added later for GitHub Pages'
+    # sake but hasn't been made the repo default yet, so both are listed here.
+    branches: [main, claude/infocom-text-adventure-emulator-32pzp3]
   workflow_dispatch:
 
 permissions:
