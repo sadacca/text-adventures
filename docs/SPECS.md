@@ -266,9 +266,9 @@ round-trip ☑ Quetzal export/import ☑ transcript ring-buffer persists.
 **1.6 Graph** ☑ vitest case per rule in §3 (8 rules; `tests/graph.test.ts`) + BFS
 pathfinding and the two pure travel-abort checks — question-line detection and the
 long-trip threshold — in `tests/travel.test.ts` (the room-mismatch and char-input abort
-conditions need a live engine to observe and are deferred to whenever tap-to-travel gets
-wired into the UI, see 1.8 note) ☑ serialization round-trip ☑ debounced (500 ms)
-persistence (`src/state/mapStore.ts`).
+conditions need a live engine to observe; covered once tap-to-travel was wired into the
+UI in Task 1.8 — see `tests/travelTo.test.ts` and the 1.8 note below) ☑ serialization
+round-trip ☑ debounced (500 ms) persistence (`src/state/mapStore.ts`).
 (2026-07-13: implemented directly, skipping ahead of 1.4/1.7 per owner request — see
 IMPLEMENTATION_PLAN.md outcome notes. `src/map/graph.ts`, `directions.ts`, `travel.ts`;
 storage in `src/storage/maps.ts`.)
