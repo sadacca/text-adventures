@@ -623,6 +623,43 @@ everything including WASM (fully offline after first load), install prompt flow.
 Acceptance: Lighthouse PWA installable check passes; airplane-mode reload on a real
 Android phone works; full session (play, map, autosave-resume) verified on the device.
 
+### Task 1.10 — Suggested exits from room text (future, not yet scheduled)
+**Owner idea (2026-07-13), design sketch only — no code written for this yet.** The
+automapper (§3's 8 rules) only ever records an edge once the player actually tries a
+direction and the room changes. But room description text often *mentions* an exit the
+player hasn't tried yet ("there is a passage to the west", "a door leads north") — or
+mentions one they went a different way from (description says west, player went
+south). Surfacing those as unconfirmed suggestions would help players notice exits
+they've overlooked.
+
+Sketch, for whoever picks this up:
+- **Detection**: scan `buffer_text` for the same direction words `directions.ts`'s
+  `ALIASES` already recognizes (word-boundary match, not substring — "westward" ≠
+  "west" as a real exit mention), scoped to text seen while occupying a given room (not
+  just its `firstDescription`, since re-`look`ing can surface exits the initial arrival
+  text didn't). Store the accumulated set as a new optional `RoomNode` field, e.g.
+  `mentionedDirections?: Direction[]` (serializes for free alongside the rest of the
+  graph).
+- **Diffing**: a mentioned direction is only worth surfacing if it's *not* already a
+  confirmed (or inferred) edge from that room — otherwise every already-mapped exit
+  would also "light up" as a suggestion, which is noise, not signal.
+- **UI**: on the map, a short faint stub at that direction's `gridOffset` (or, for a
+  direction with no known destination, just a marker with no line/target room) —
+  visually distinct from both a confirmed edge and a rule-4 custom edge, since it's a
+  *guess*, not an observation. Could also lightly highlight the relevant `CompassRose`
+  button with a third visual state (known / suggested / neither).
+- **Known false-positive/negative risk — the reason this isn't built yet**: natural-
+  language room descriptions vary enormously across games; direction words appear in
+  flavor text unrelated to exits ("a chilly northern wind"), in negations ("no exit to
+  the west"), or exits are described without any direction word at all ("a door", "an
+  archway"). This feature is inherently a soft suggestion, not a fact, and needs a UI
+  treatment that makes that clear (e.g. never auto-adds a real edge, never contributes
+  to tap-to-travel's BFS) — worth spiking against a couple of real games' prose before
+  committing to a detection heuristic.
+- The detection/diffing logic itself is pure functions over strings and `MapGraph` (no
+  live engine needed), so — like the rest of the automapper — it's a good fit for
+  vitest coverage from the start, same pattern as `tests/graph.test.ts`.
+
 ---
 
 ## 4. Phase 2 — LLM assistance (bring-your-own-token)

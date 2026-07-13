@@ -340,3 +340,7 @@ attribution) ☐ full on-device session verified.
 - GitHub Pages primary hosting; LAN serving is best-effort undocumented.
 - Turn counter increments on `command` events only.
 - `(unknown)` is a single shared node, not one per dark encounter.
+- Suggested-but-unconfirmed exits (parsing "there is a passage to the west" out of room
+  text and showing it before the player tries it) is a deliberately deferred idea, not
+  an oversight — design sketch in `IMPLEMENTATION_PLAN.md` Task 1.10. Not built because
+  the detection heuristic needs validating against real games' prose first.

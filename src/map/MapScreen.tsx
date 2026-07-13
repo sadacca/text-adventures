@@ -3,7 +3,7 @@ import { useEngineStore } from '../state/engineStore';
 import { useMapStore } from '../state/mapStore';
 import { computePath, isLongTrip } from './travel';
 import type { MapGraph, RoomEdge, RoomNode } from './graph';
-import { isCompassDirection } from './directions';
+import { isCompassDirection, isStubDirection } from './directions';
 import { RoomEditSheet } from './RoomEditSheet';
 
 const UNIT = 110; // px per grid cell
@@ -22,8 +22,12 @@ interface Segment {
   x2: number;
   y2: number;
   dashed: boolean;
-  // Set for a rule-4 custom edge (e.g. "climb ladder") — no compass glyph applies, so
-  // the map draws it distinctly and labels it with the command text instead.
+  // True only for a rule-4 custom edge (e.g. "climb ladder") — no compass glyph
+  // applies, so the map draws it distinctly (dotted, accent-colored).
+  custom: boolean;
+  // Shown for custom edges (the command text) and for up/down/in/out (real compass
+  // edges, but rendered as short stubs whose direction isn't obvious from geometry
+  // alone — see isStubDirection).
   label?: string;
 }
 
@@ -51,6 +55,7 @@ function buildSegments(graph: MapGraph): Segment[] {
   return [...byPair.entries()].map(([key, edge]) => {
     const a = graph.rooms[edge.from];
     const b = graph.rooms[edge.to];
+    const custom = !isCompassDirection(edge.dir);
     return {
       key,
       x1: a.pos.x * UNIT,
@@ -58,7 +63,8 @@ function buildSegments(graph: MapGraph): Segment[] {
       x2: b.pos.x * UNIT,
       y2: b.pos.y * UNIT,
       dashed: edge.status === 'inferred',
-      label: isCompassDirection(edge.dir) ? undefined : edge.dir,
+      custom,
+      label: custom || isStubDirection(edge.dir) ? edge.dir : undefined,
     };
   });
 }
@@ -316,12 +322,12 @@ export function MapScreen() {
           {segments.map((seg) => (
             <g key={seg.key}>
               <line
-                className={seg.label ? 'map-edge map-edge-custom' : 'map-edge'}
+                className={seg.custom ? 'map-edge map-edge-custom' : 'map-edge'}
                 x1={seg.x1}
                 y1={seg.y1}
                 x2={seg.x2}
                 y2={seg.y2}
-                strokeDasharray={seg.label ? '2 4' : seg.dashed ? '6 5' : undefined}
+                strokeDasharray={seg.custom ? '2 4' : seg.dashed ? '6 5' : undefined}
               />
               {seg.label && (
                 <text

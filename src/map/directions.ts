@@ -71,6 +71,18 @@ export function isCompassDirection(dir: string): dir is Direction {
   return Object.prototype.hasOwnProperty.call(DIRECTION_TABLE, dir);
 }
 
+const STUB_DIRECTIONS = new Set<Direction>(['up', 'down', 'in', 'out']);
+
+/**
+ * True for up/down/in/out: real compass edges (full inferred-reverse etc. still
+ * apply), but ones that render as a short stub rather than a full grid offset (SPECS.md
+ * §2), so the map labels them too — unlike n/s/e/w/etc., a stub's direction isn't
+ * obvious from geometry alone.
+ */
+export function isStubDirection(dir: string): boolean {
+  return STUB_DIRECTIONS.has(dir as Direction);
+}
+
 export function opposite(dir: Direction): Direction {
   return DIRECTION_TABLE[dir].opposite;
 }
