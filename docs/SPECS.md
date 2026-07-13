@@ -39,6 +39,20 @@ export interface EngineHandle {
   on(listener: (e: GameEvent) => void): () => void;   // returns unsubscribe
   saveAutosave(): Promise<Uint8Array>;  // opaque snapshot blob
   stop(): Promise<void>;
+
+  // Added in Task 1.5. `start()`'s `opts.autorestore` only works if `preloadAutosave`
+  // was called first — the engine has no IndexedDB access of its own (see Task 1.3's
+  // decision-gate note): the caller fetches bytes via storage/autosaves.ts and hands
+  // them in. Likewise, `saveAutosave()` returns bytes for the *caller* to persist as a
+  // new generation; the engine itself never touches IndexedDB.
+  preloadAutosave(bytes: Uint8Array): void;
+  // Player-typed SAVE/RESTORE (distinct from our silent autosave) round-trip through
+  // these two hooks instead of a raw file-picker: 'save' resolves to a chosen name (or
+  // null to cancel), 'restore' resolves to a chosen name *plus* that save's previously
+  // written bytes (the caller reads them from storage/saves.ts and hands them back so
+  // the engine can preload them before the interpreter's RESTORE reads the file).
+  onNamedSavePrompt(handler: (kind: 'save' | 'restore') => Promise<{ name: string; bytes?: Uint8Array } | null>): void;
+  onNamedSaveWritten(listener: (name: string, bytes: Uint8Array) => void): () => void;
 }
 ```
 
@@ -198,12 +212,14 @@ round-trip. Unit tests replay fixtures through the protocol tap and assert the e
 
 ## 8. Per-task done-checklists (phase 1)
 
-**1.1 Scaffold** ☐ Vite+React+TS builds ☐ vitest runs an example test ☐ ESLint+Prettier
-scripts ☐ `vite-plugin-pwa` with base-aware manifest ☐ tab shell renders at 390×844
-☐ `.gitignore` blocks `*.z?/ *.dat/ *.zblorb/ *.blb` ☐ deploy.yml pushes to Pages.
+**1.1 Scaffold** ☑ Vite+React+TS builds ☑ vitest runs an example test ☑ ESLint+Prettier
+scripts ☑ `vite-plugin-pwa` with base-aware manifest ☑ tab shell renders at 390×844
+☑ `.gitignore` blocks `*.z?/ *.dat/ *.zblorb/ *.blb` ☑ deploy.yml pushes to Pages.
 
-**1.2 Library** ☐ file picker accepts z3/z5/z8/dat/zblorb ☐ sha256 gameId dedupes
-re-uploads ☐ list sorted by lastPlayedAt ☐ delete confirms ☐ persists across reload.
+**1.2 Library** ☑ file picker accepts z3/z5/z8/dat/zblorb ☑ sha256 gameId dedupes
+re-uploads ☑ list sorted by lastPlayedAt ☑ delete confirms ☑ persists across reload.
+(Minimal implementation built alongside Task 1.5, which needed it as a substrate —
+no manual "mark room"/rename UI yet, no touch-target audit beyond the 44px CSS rule.)
 
 **1.3 Engine** ☑ emglken+asyncglk render a z5 AND a z3 game ☑ WASM served locally
 ☑ autosave snapshot+restore spike proven ☑ decision-gate outcome recorded in PLAN
@@ -211,10 +227,12 @@ re-uploads ☐ list sorted by lastPlayedAt ☐ delete confirms ☐ persists acro
 
 **1.4 Protocol tap** ☐ all messages observed unmodified ☐ GameEvent stream matches
 fixture expectations ☐ DebugConsole shows live events ☐ fixture recording works.
+(`glkote-bridge.ts` is a working first-cut tap per Task 1.3's note; still needs the
+fixture-based test suite and DebugConsole this task calls for.)
 
-**1.5 Autosave/saves** ☐ snapshot every turn + visibilitychange/pagehide ☐ kill-tab →
-reopen resumes with scrollback ☐ 3-generation pruning ☐ in-game SAVE/RESTORE
-round-trip ☐ Quetzal export/import ☐ transcript ring-buffer persists.
+**1.5 Autosave/saves** ☑ snapshot every turn + visibilitychange/pagehide ☑ kill-tab →
+reopen resumes with scrollback ☑ 3-generation pruning ☑ in-game SAVE/RESTORE
+round-trip ☑ Quetzal export/import ☑ transcript ring-buffer persists.
 
 **1.6 Graph** ☐ vitest case per rule in §3 (8 rules + travel abort conditions)
 ☐ serialization round-trip ☐ debounced persistence.
