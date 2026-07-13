@@ -1,9 +1,35 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vite';
+import { copyFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const base = process.env.VITE_BASE_PATH ?? '/text-adventures/';
+
+/**
+ * emglken's bocfel.js sets its own `Module.locateFile` unconditionally (for its
+ * "single-file mode" fallback), which shadows the `new URL('bocfel.wasm', import.meta.url)`
+ * call Vite *does* statically rewrite to the correctly-hashed build output. At runtime this
+ * default resolves to an *unhashed* `bocfel.wasm` next to the built JS chunk, which the
+ * production build never emits under that literal name — the request 404s, the static
+ * host's SPA fallback serves back `index.html`, and WebAssembly.instantiate chokes on HTML
+ * bytes. Since nothing catches that failure in engine.ts, the Story screen is stuck on
+ * "Loading…" forever. Ship an unhashed copy alongside the hashed one so that request 200s.
+ */
+function emglkenWasmFallback(): Plugin {
+  return {
+    name: 'emglken-wasm-fallback',
+    apply: 'build',
+    async writeBundle(options) {
+      const require = createRequire(import.meta.url);
+      const src = require.resolve('emglken/build/bocfel.wasm');
+      const outDir = options.dir ?? 'dist';
+      await copyFile(src, path.join(outDir, 'assets', 'bocfel.wasm'));
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -16,6 +42,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    emglkenWasmFallback(),
     VitePWA({
       registerType: 'autoUpdate',
       scope: base,
