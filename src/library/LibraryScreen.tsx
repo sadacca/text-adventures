@@ -109,7 +109,14 @@ export function LibraryScreen() {
         />
       </label>
 
-      {games.length === 0 && <p>No games yet — upload a story file to get started.</p>}
+      {games.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-state-icon" aria-hidden="true">
+            📚
+          </span>
+          <p>No games yet — upload a story file to get started.</p>
+        </div>
+      )}
 
       <ul className="game-list">
         {games.map((game) => (
@@ -121,13 +128,21 @@ export function LibraryScreen() {
               </span>
             </div>
             <div className="game-list-actions">
-              <button type="button" className="tap-target" onClick={() => void resume(game.gameId)}>
+              <button
+                type="button"
+                className="tap-target btn-primary"
+                onClick={() => void resume(game.gameId)}
+              >
                 {savedGameIds.has(game.gameId) ? 'Resume' : 'Play'}
               </button>
               <button type="button" className="tap-target" onClick={() => void onRestart(game)}>
                 Restart
               </button>
-              <button type="button" className="tap-target" onClick={() => void onDelete(game)}>
+              <button
+                type="button"
+                className="tap-target btn-danger"
+                onClick={() => void onDelete(game)}
+              >
                 Delete
               </button>
             </div>

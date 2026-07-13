@@ -327,9 +327,36 @@ Playwright pass).
 Not verified this session (needs a real device / multi-touch harness — see PLAN outcome
 notes): two-finger pinch-zoom and the >8-move long-trip confirm dialog.
 
-**1.9 Polish/offline** ☐ install prompt on Android Chrome via Pages URL ☐ airplane-mode
-reload works ☐ font-size control ☐ dark/light ☐ licenses screen (incl. Bocfel GPL-2.0
-attribution) ☐ full on-device session verified.
+**1.9 Polish/offline** ☑ font-size control ☑ dark/light ☐ install prompt on Android
+Chrome via Pages URL ☐ airplane-mode reload works ☐ licenses screen (incl. Bocfel
+GPL-2.0 attribution) ☐ full on-device session verified.
+(2026-07-13: first slice only — a "beautification" pass, owner-scoped to exclude
+install-prompt/licenses/offline-device-verification for now. Theme (`uiStore.theme`)
+and `fontScale` already had store plumbing and a `data-theme`/root-`font-size` effect in
+`App.tsx` from scaffolding, but no UI exposed either — added a settings card in
+`MoreScreen.tsx` (segmented Light/Dark/System control + an A−/A+ stepper, 85%-140% in
+10% steps) and verified both live via Playwright, including that "Dark"/"Light"
+correctly override the OS color-scheme rather than just following it. Also added a
+shared design-token layer (`index.css`: spacing/radius/shadow custom properties) and a
+global `button` reset (native chrome was fighting the existing per-component CSS),
+`.btn-primary`/`.btn-danger` variants, and a shared `.empty-state` treatment (icon +
+centered text, `flex:1` within the now-flex-column `.screen`) applied across
+Library/Story/Map/More's "nothing here yet" states.
+**Two real bugs found and fixed along the way, not just cosmetics:** (1) the story
+transcript never auto-scrolled — `TapWords.tsx`'s `<pre>` had no ref/effect at all, so a
+long session left the player looking at whatever text was on screen when they last
+manually scrolled, unaware there was new output below; fixed with a `scrollTop =
+scrollHeight` effect keyed on the transcript text. (2) `engineStore.ts`'s
+`stripHistoryReplay`'s blank-line collapse (`\n{3,} -> \n\n`) only ever ran on the
+branch that found Bocfel's history-playback markers — ordinary turns, including
+Adventure's own opening banner (which pads itself with six leading blank lines for a
+full-height terminal), passed through untouched, showing as a large dead gap above the
+first real text in our scrolling view. Replaced with a `normalizeResponse()` helper
+applied to every turn's response: same 3+-blank-line collapse, plus a leading-blank-line
+trim gated on `get().transcript.length === 0` (only the transcript's very first chunk,
+so normal inter-turn spacing elsewhere is untouched).
+Verified via Playwright against a real `advent.z5` session (light + dark + forced
+theme override + increased font scale), plus `npm run lint`/`npm test`/`npm run build`.)
 
 ## 9. Known judgment calls already made (do not re-litigate)
 

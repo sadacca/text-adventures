@@ -19,7 +19,12 @@ export function StoryScreen() {
     return (
       <div className="screen">
         <h1>Story</h1>
-        <p>No game loaded. Pick one from the Library tab.</p>
+        <div className="empty-state">
+          <span className="empty-state-icon" aria-hidden="true">
+            📖
+          </span>
+          <p>No game loaded. Pick one from the Library tab.</p>
+        </div>
       </div>
     );
   }
@@ -27,8 +32,8 @@ export function StoryScreen() {
   return (
     <div className="screen story-screen">
       <h1>{gameTitle}</h1>
-      {error && <p role="alert">{error}</p>}
-      {loading && <p>Loading…</p>}
+      {error && <p className="error-text" role="alert">{error}</p>}
+      {loading && <p className="loading-hint">Loading…</p>}
       {status && (
         <div className="status-line">
           <span>{status.left}</span>

@@ -1,6 +1,16 @@
 import { useEngineStore } from '../state/engineStore';
-import { useUiStore } from '../state/uiStore';
+import { useUiStore, type UiState } from '../state/uiStore';
 import { deleteSave, exportSave, importSave } from '../storage/saves';
+
+const THEME_OPTIONS: { value: UiState['theme']; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
+
+const FONT_SCALE_MIN = 0.85;
+const FONT_SCALE_MAX = 1.4;
+const FONT_SCALE_STEP = 0.1;
 
 function formatDate(ms: number): string {
   return new Date(ms).toLocaleString(undefined, {
@@ -20,18 +30,72 @@ export function MoreScreen() {
   const refreshSaves = useEngineStore((s) => s.refreshSaves);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
   const setDebugConsoleEnabled = useUiStore((s) => s.setDebugConsoleEnabled);
+  const theme = useUiStore((s) => s.theme);
+  const setTheme = useUiStore((s) => s.setTheme);
+  const fontScale = useUiStore((s) => s.fontScale);
+  const setFontScale = useUiStore((s) => s.setFontScale);
+
+  function nudgeFontScale(delta: number) {
+    const next = Math.round((fontScale + delta) * 100) / 100;
+    setFontScale(Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, next)));
+  }
 
   const settingsSection = (
     <section>
       <h2>Settings</h2>
-      <label className="settings-row">
-        <span>Debug console (Story tab)</span>
-        <input
-          type="checkbox"
-          checked={debugConsoleEnabled}
-          onChange={(e) => setDebugConsoleEnabled(e.target.checked)}
-        />
-      </label>
+      <div className="settings-card">
+        <div className="settings-row">
+          <span className="settings-row-label">Theme</span>
+          <div className="segmented" role="group" aria-label="Theme">
+            {THEME_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={theme === opt.value ? 'active' : ''}
+                aria-pressed={theme === opt.value}
+                onClick={() => setTheme(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="settings-row">
+          <span className="settings-row-label">Text size</span>
+          <div className="stepper">
+            <button
+              type="button"
+              className="tap-target"
+              aria-label="Decrease text size"
+              disabled={fontScale <= FONT_SCALE_MIN}
+              onClick={() => nudgeFontScale(-FONT_SCALE_STEP)}
+            >
+              A−
+            </button>
+            <span className="stepper-value">{Math.round(fontScale * 100)}%</span>
+            <button
+              type="button"
+              className="tap-target"
+              aria-label="Increase text size"
+              disabled={fontScale >= FONT_SCALE_MAX}
+              onClick={() => nudgeFontScale(FONT_SCALE_STEP)}
+            >
+              A+
+            </button>
+          </div>
+        </div>
+        <label className="settings-row">
+          <span className="settings-row-label">
+            Debug console
+            <span className="settings-row-hint">Live event stream on the Story tab</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={debugConsoleEnabled}
+            onChange={(e) => setDebugConsoleEnabled(e.target.checked)}
+          />
+        </label>
+      </div>
     </section>
   );
 
@@ -40,7 +104,13 @@ export function MoreScreen() {
       <div className="screen">
         <h1>More</h1>
         {settingsSection}
-        <p>Open a game from the Library to see its saves.</p>
+        <h2>Saves</h2>
+        <div className="empty-state">
+          <span className="empty-state-icon" aria-hidden="true">
+            💾
+          </span>
+          <p>Open a game from the Library to see its saves.</p>
+        </div>
       </div>
     );
   }
@@ -64,10 +134,14 @@ export function MoreScreen() {
       <section>
         <h2>Saves — {gameTitle}</h2>
         <div className="game-list-actions" style={{ marginBottom: 12 }}>
-          <button type="button" className="tap-target" onClick={() => sendCommand('save')}>
+          <button
+            type="button"
+            className="tap-target btn-primary"
+            onClick={() => sendCommand('save')}
+          >
             Save now
           </button>
-          <label className="tap-target" style={{ display: 'inline-flex', alignItems: 'center' }}>
+          <label className="tap-target file-label-button">
             Import save
             <input
               type="file"
@@ -81,7 +155,14 @@ export function MoreScreen() {
           </label>
         </div>
 
-        {saves.length === 0 && <p>No named saves yet.</p>}
+        {saves.length === 0 && (
+          <div className="empty-state">
+            <span className="empty-state-icon" aria-hidden="true">
+              💾
+            </span>
+            <p>No named saves yet.</p>
+          </div>
+        )}
         <ul className="game-list">
           {saves.map((save) => (
             <li key={save.name} className="game-list-item">
@@ -108,7 +189,7 @@ export function MoreScreen() {
                 </button>
                 <button
                   type="button"
-                  className="tap-target"
+                  className="tap-target btn-danger"
                   onClick={() => void onDelete(save.name)}
                 >
                   Delete

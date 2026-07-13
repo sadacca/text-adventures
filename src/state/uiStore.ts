@@ -4,7 +4,7 @@ export type Tab = 'library' | 'story' | 'map' | 'more';
 
 const COMMAND_HISTORY_LIMIT = 20;
 
-interface UiState {
+export interface UiState {
   tab: Tab;
   commandDraft: string;
   theme: 'light' | 'dark' | 'system';

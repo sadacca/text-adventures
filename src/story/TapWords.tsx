@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useUiStore } from '../state/uiStore';
 
 /** Strips leading/trailing punctuation so tapping "lantern." appends "lantern". */
@@ -14,11 +15,20 @@ function cleanWord(token: string): string {
 export function TapWords({ text }: { text: string }) {
   const appendToDraft = useUiStore((s) => s.appendToDraft);
   const requestInputFocus = useUiStore((s) => s.requestInputFocus);
+  const ref = useRef<HTMLPreElement>(null);
+
+  // Pin scroll to the newest text on every update — otherwise a long session leaves the
+  // player staring at whatever text happened to be on screen when they last scrolled,
+  // with nothing indicating there's new output below.
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [text]);
 
   const tokens = text.split(/(\s+)/);
 
   return (
-    <pre className="story-transcript">
+    <pre className="story-transcript" ref={ref}>
       {tokens.map((token, i) => {
         if (/^\s*$/.test(token)) return token;
         const word = cleanWord(token);

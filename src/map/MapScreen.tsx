@@ -282,7 +282,12 @@ export function MapScreen() {
     return (
       <div className="screen">
         <h1>Map</h1>
-        <p>No game loaded. Pick one from the Library tab.</p>
+        <div className="empty-state">
+          <span className="empty-state-icon" aria-hidden="true">
+            🗺️
+          </span>
+          <p>No game loaded. Pick one from the Library tab.</p>
+        </div>
       </div>
     );
   }
@@ -291,7 +296,12 @@ export function MapScreen() {
     return (
       <div className="screen">
         <h1>Map</h1>
-        <p>The map fills in automatically as you explore.</p>
+        <div className="empty-state">
+          <span className="empty-state-icon" aria-hidden="true">
+            🧭
+          </span>
+          <p>The map fills in automatically as you explore.</p>
+        </div>
       </div>
     );
   }

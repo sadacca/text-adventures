@@ -31,11 +31,14 @@
   height: var(--tab-bar-height);
   background: none;
   border: none;
+  border-radius: 0;
+  border-top: 2px solid transparent;
   color: var(--text-dim);
 }
 
 .tab-bar-button.active {
   color: var(--accent);
+  border-top-color: var(--accent);
 }
 
 .tab-bar-icon {
@@ -45,16 +48,56 @@
 
 .tab-bar-label {
   font-size: 11px;
+  font-weight: 500;
 }
 
 .screen {
-  padding: 16px;
+  padding: var(--space-4);
   min-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .screen h1 {
-  font-size: 20px;
-  margin: 0 0 12px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-4);
+}
+
+.screen h2 {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin: var(--space-5) 0 var(--space-2);
+}
+
+.screen h2:first-of-type {
+  margin-top: 0;
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-dim);
+}
+
+.empty-state-icon {
+  font-size: 36px;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 26em;
 }
 
 .story-screen {
@@ -66,13 +109,31 @@
 .status-line {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
   font-size: 13px;
   flex-shrink: 0;
+  margin-bottom: var(--space-2);
+}
+
+.status-line span:first-child {
+  font-weight: 600;
+}
+
+.status-line span:last-child {
+  color: var(--text-dim);
+}
+
+.loading-hint {
+  color: var(--text-dim);
+}
+
+.error-text {
+  color: var(--danger);
 }
 
 .story-transcript {
@@ -234,16 +295,109 @@
 .command-form input[type='text'] {
   flex: 1;
   min-width: 0;
-  padding: 10px;
+  padding: 10px 12px;
   font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.command-form input[type='text']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 0;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.settings-card .settings-row + .settings-row {
+  border-top: 1px solid var(--border);
+}
+
+.settings-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-row-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+  background: var(--bg);
+}
+
+.segmented button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.segmented button.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.stepper button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.stepper-value {
+  min-width: 3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+
+/* A <label> wrapping a hidden file input, styled to read as a button (e.g. "Import
+   save") — the global `button` reset doesn't apply since it isn't a <button>. */
+.file-label-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
 }
 
 .debug-console {
@@ -283,11 +437,13 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  padding: 0 16px;
-  margin-bottom: 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elevated);
+  padding: 0 var(--space-4);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
 }
 
 .game-list {
@@ -296,22 +452,28 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .game-list-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
 }
 
 .game-list-info {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+}
+
+.game-list-info strong {
+  font-size: 15px;
 }
 
 .game-list-meta {
@@ -321,15 +483,12 @@
 
 .game-list-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .game-list-actions button {
   min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
+  padding: 0 var(--space-3);
 }
 
 .map-screen {
