@@ -349,6 +349,18 @@
   stroke-width: 2;
 }
 
+.map-edge-custom {
+  stroke: var(--accent);
+}
+
+.map-edge-label {
+  fill: var(--accent);
+  font-size: 9px;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+}
+
 .map-room rect {
   fill: var(--bg-elevated);
   stroke: var(--border);

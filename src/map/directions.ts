@@ -62,10 +62,20 @@ export function normalizeDirection(input: string): Direction | null {
   return ALIASES[text] ?? null;
 }
 
+/**
+ * True for one of the 12 canonical compass words; false for a custom edge label (the
+ * raw command text recorded for a non-compass move — SPECS.md §3 rule 4). Edges of the
+ * latter kind have no `opposite`/`gridOffset` and are drawn/labeled differently.
+ */
+export function isCompassDirection(dir: string): dir is Direction {
+  return Object.prototype.hasOwnProperty.call(DIRECTION_TABLE, dir);
+}
+
 export function opposite(dir: Direction): Direction {
   return DIRECTION_TABLE[dir].opposite;
 }
 
-export function gridOffset(dir: Direction): { dx: number; dy: number } | null {
+export function gridOffset(dir: string): { dx: number; dy: number } | null {
+  if (!isCompassDirection(dir)) return null;
   return DIRECTION_TABLE[dir].offset;
 }

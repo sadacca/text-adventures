@@ -81,7 +81,9 @@ export interface RoomNode {
 export interface RoomEdge {
   from: string;            // RoomNode.id
   to: string;
-  dir: Direction;
+  dir: Direction | string; // compass word, OR (rule 4, revised 2026-07-13) the raw
+                           // command text for a non-compass move that still changed
+                           // rooms — see rule 4 below.
   status: 'confirmed' | 'inferred';  // inferred = auto-added reverse edge
   userDeleted?: boolean;   // tombstone: automapper must never re-add this edge
 }
@@ -133,8 +135,24 @@ Given the `GameEvent` stream, on each `status_line` following a `command`:
 3. **Inferred edge later traversed** → promote to `confirmed`; if traversal lands in a
    DIFFERENT room than the inferred edge claimed (one-way passage), delete the inferred
    edge and create a confirmed edge to the actual destination.
-4. **Non-movement command + room changed** → teleport rule: room created/found with no
+4. **Non-compass command + room changed** (revised 2026-07-13 — see note below):
+   if there's a known origin room (`currentRoomId` is a real, non-`unknown` room), this
+   is a real, repeatable connection — "climb ladder", "go around house", "enter
+   window" — not a one-off teleport, so link it: upsert edge `(from, dir) → to` as
+   `confirmed`, where `dir` is the exact raw command text (not a compass word). Unlike
+   rule 1, **no inferred reverse edge is added** — a custom edge label has no known
+   opposite, so a link back only appears once the reverse command is actually traversed
+   (at which point it's just a fresh rule-1-style upsert with its own label). True
+   teleport rule (unchanged): if there's *no* known origin room (the very first room of
+   the game, or leaving the shared `(unknown)` singleton) → room created/found with no
    edge, flagged `teleportTarget`; `currentRoomId` updated.
+   **2026-07-13 note:** originally this rule always dropped the edge and only flagged
+   `teleportTarget` — real non-cardinal exits (ladders, windows, "go around the house")
+   were indistinguishable from genuine one-off teleports (a spell, being dragged
+   somewhere) by command text alone, so they were losing connectivity on the map. Owner
+   decision: prefer linking (the common case) over correctly excluding the rare true
+   teleport; a spuriously-linked one-off can still be removed via the existing
+   long-press "delete" edge action.
 5. **Status line has no recognizable room name** (dark room, custom status) → current
    room becomes the shared `(unknown)` node (id `unknown`), no edges recorded until a
    real room name reappears.
@@ -272,6 +290,13 @@ round-trip ☑ debounced (500 ms) persistence (`src/state/mapStore.ts`).
 (2026-07-13: implemented directly, skipping ahead of 1.4/1.7 per owner request — see
 IMPLEMENTATION_PLAN.md outcome notes. `src/map/graph.ts`, `directions.ts`, `travel.ts`;
 storage in `src/storage/maps.ts`.)
+(2026-07-13, later same day: rule 4 revised per owner feedback from real play — see the
+rule 4 note in §3 above. `RoomEdge.dir` widened to `Direction | string`;
+`directions.ts` grew `isCompassDirection()` so `layout.ts`/`travel.ts`/`CompassRose.tsx`/
+`MapScreen.tsx` can tell a compass edge from a custom one. `MapScreen.tsx` draws custom
+edges with a distinct dotted style and a text label (the command used); `CompassRose`'s
+"known exits" highlight only ever considers compass edges, since there's no compass
+button for a custom command.)
 
 **1.7 Command input** ☑ no-typing traversal test passes (verb chip + tap-word compose
 "take lamp" and it's actually taken — Playwright, 390×844) ☑ keyboard stays open across

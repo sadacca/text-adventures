@@ -3,6 +3,7 @@ import { useEngineStore } from '../state/engineStore';
 import { useMapStore } from '../state/mapStore';
 import { computePath, isLongTrip } from './travel';
 import type { MapGraph, RoomEdge, RoomNode } from './graph';
+import { isCompassDirection } from './directions';
 import { RoomEditSheet } from './RoomEditSheet';
 
 const UNIT = 110; // px per grid cell
@@ -21,6 +22,9 @@ interface Segment {
   x2: number;
   y2: number;
   dashed: boolean;
+  // Set for a rule-4 custom edge (e.g. "climb ladder") — no compass glyph applies, so
+  // the map draws it distinctly and labels it with the command text instead.
+  label?: string;
 }
 
 interface ViewBox {
@@ -54,6 +58,7 @@ function buildSegments(graph: MapGraph): Segment[] {
       x2: b.pos.x * UNIT,
       y2: b.pos.y * UNIT,
       dashed: edge.status === 'inferred',
+      label: isCompassDirection(edge.dir) ? undefined : edge.dir,
     };
   });
 }
@@ -309,15 +314,27 @@ export function MapScreen() {
       >
         <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
           {segments.map((seg) => (
-            <line
-              key={seg.key}
-              className="map-edge"
-              x1={seg.x1}
-              y1={seg.y1}
-              x2={seg.x2}
-              y2={seg.y2}
-              strokeDasharray={seg.dashed ? '6 5' : undefined}
-            />
+            <g key={seg.key}>
+              <line
+                className={seg.label ? 'map-edge map-edge-custom' : 'map-edge'}
+                x1={seg.x1}
+                y1={seg.y1}
+                x2={seg.x2}
+                y2={seg.y2}
+                strokeDasharray={seg.label ? '2 4' : seg.dashed ? '6 5' : undefined}
+              />
+              {seg.label && (
+                <text
+                  className="map-edge-label"
+                  x={(seg.x1 + seg.x2) / 2}
+                  y={(seg.y1 + seg.y2) / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                >
+                  {seg.label}
+                </text>
+              )}
+            </g>
           ))}
           {rooms.map((room) => {
             const pos =

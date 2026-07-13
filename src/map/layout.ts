@@ -79,8 +79,11 @@ function findFreeCell(
   return desired; // give up rather than loop forever; overlap is a rare, cosmetic fallback
 }
 
-function neighborsOf(graph: MapGraph, roomId: string): { dir: Direction; roomId: string }[] {
-  const result: { dir: Direction; roomId: string }[] = [];
+function neighborsOf(
+  graph: MapGraph,
+  roomId: string,
+): { dir: Direction | string; roomId: string }[] {
+  const result: { dir: Direction | string; roomId: string }[] = [];
   for (const edge of graph.edges) {
     if (edge.userDeleted || edge.from !== roomId) continue;
     result.push({ dir: edge.dir, roomId: edge.to });
