@@ -88,6 +88,13 @@ interface EngineState {
    *  should never be missed behind a "new text" pill. */
   pinRequestId: number;
 
+  /** UX-11: set when a status_line's score increases turn-over-turn, so StoryScreen can
+   *  toast it. `id` is an incrementing counter (not just `amount`) so two equal-amount
+   *  increases in a row still retrigger the toast. Only score *increases* toast — a drop,
+   *  or a `right` field that's actually a clock, would be a false positive worse than a
+   *  missed toast. */
+  scoreDelta: { amount: number; id: number } | null;
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -107,6 +114,9 @@ let activeCleanup: (() => void) | null = null;
 let activeGameId: string | null = null;
 let lastKnownTurn = 0;
 let recordedRaw: RawMessage[] = [];
+/** UX-11: previous turn's parsed score, so status_line handling can detect an increase. */
+let previousScore: number | null = null;
+let scoreDeltaCounter = 0;
 
 function teardownActiveSession() {
   activeCleanup?.();
@@ -115,6 +125,7 @@ function teardownActiveSession() {
   activeEngine = null;
   activeGameId = null;
   lastKnownTurn = 0;
+  previousScore = null;
 }
 
 export const useEngineStore = create<EngineState>((set, get) => ({
@@ -131,6 +142,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   recordingFixture: false,
   traveling: false,
   pinRequestId: 0,
+  scoreDelta: null,
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -155,6 +167,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       inputType: null,
       saves: [],
       debugEvents: [],
+      scoreDelta: null,
     });
 
     const game = await getGame(gameId);
@@ -223,6 +236,15 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         }
       } else if (event.kind === 'status_line') {
         set({ status: { left: event.left, right: event.right } });
+        const scoreMatch = /(-?\d+)/.exec(event.right);
+        if (scoreMatch) {
+          const score = Number(scoreMatch[1]);
+          if (!resuming && previousScore !== null && score > previousScore) {
+            scoreDeltaCounter += 1;
+            set({ scoreDelta: { amount: score - previousScore, id: scoreDeltaCounter } });
+          }
+          previousScore = score;
+        }
       } else if (isSilent) {
         // resuming, but not text/status (e.g. the resume's own input_requested): ignore.
       } else if (event.kind === 'input_requested' && event.type === 'line') {
@@ -336,6 +358,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       saves: [],
       debugEvents: [],
       recordingFixture: false,
+      scoreDelta: null,
     });
   },
 
