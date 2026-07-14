@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import type { Direction } from '../map/graph';
-import { useKnownExits } from './useKnownExits';
+import { useKnownExits, useSuggestedExits } from './useKnownExits';
 import { haptic } from '../haptics';
 
 /** Grid layout of the expanded compass; `null` cells are just spacers. */
@@ -37,6 +37,7 @@ export function CompassRose() {
   const sendCommand = useEngineStore((s) => s.sendCommand);
   const inputType = useEngineStore((s) => s.inputType);
   const knownExits = useKnownExits();
+  const suggestedExits = useSuggestedExits();
 
   function go(dir: Direction) {
     haptic();
@@ -75,7 +76,7 @@ export function CompassRose() {
               key={dir}
               type="button"
               aria-label={`Go ${dir}`}
-              className={`compass-button tap-target${knownExits.has(dir) ? ' compass-known' : ''}`}
+              className={`compass-button tap-target${knownExits.has(dir) ? ' compass-known' : suggestedExits.has(dir) ? ' compass-suggested' : ''}`}
               disabled={inputType !== 'line'}
               onClick={() => go(dir)}
             >

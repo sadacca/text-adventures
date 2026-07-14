@@ -48,6 +48,7 @@ function createFakeEngine(bootStatus: string) {
       emit({ kind: 'status_line', left: response.left, right: '', raw: [], turn });
       emit({ kind: 'input_requested', type: response.inputType ?? 'line', turn });
     },
+    sendChar() {},
     on(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

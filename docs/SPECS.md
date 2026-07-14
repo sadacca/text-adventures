@@ -171,6 +171,22 @@ room reached ≠ expected next room, if any `buffer_text` contains a line ending
 paths > 8 moves show a confirm ("uses N turns — lamp/hunger timers burn down"), because
 turns are a resource in many Infocom games.
 
+**2026-07-14 note (UX-18, Task 1.10's detection/diffing half):** `RoomNode` gained
+`mentionedDirections?: Direction[]` — the 8 unambiguous full compass words
+(n/s/e/w/ne/nw/se/sw only; word-boundary matched, so "northern"/"westward" don't count)
+found in a room's `buffer_text` since arrival, via `src/map/mentions.ts`'s
+`detectMentionedDirections`. `Automapper` accumulates `buffer_text` into a per-turn
+`pendingText` and attaches it to whichever room the turn's `status_line` resolves to
+*after* `handleStatusLine` runs (so movement text attributes to the arrival room, not the
+origin). Accepted limitations: negations ("no exit to the south") still match, and exits
+described without a direction word are missed — this is why the UI treats these as
+dashed, distinctly-styled *suggestions* (`ExitsRow`'s `?`-suffixed chips,
+`CompassRose`'s `.compass-suggested`), never real edges: they never enter `edges`, never
+participate in tap-to-travel's BFS, and detection never un-records a mention once a
+confirmed edge later exists in the same direction (that's the UI-level diffing hook's
+job, `useSuggestedExits` in `src/story/useKnownExits.ts`, not the graph's). Map rendering
+of suggestions (Task 1.10's other half) is still not built.
+
 ## 4. IndexedDB schema (`src/storage/db.ts`, via `idb`)
 
 Database `text-adventures`, version 1. One playthrough per game ⇒ `gameId` is the key
@@ -187,6 +203,17 @@ almost everywhere.
 
 Restart flow: confirm dialog → delete `autosaves`, `maps`, `transcripts` rows for
 `gameId` (keep `games` and named `saves`) → start fresh.
+
+**2026-07-14 note (UX-15):** the `settings` IndexedDB row sketched above was never built.
+`src/state/uiStore.ts` instead persists `theme`/`fontScale`/`storyFont` via zustand's
+`persist` middleware to a single `localStorage` key, `text-adventures-settings` — this is
+what actually achieves "no light-theme flash," since it rehydrates synchronously before
+first paint, which an async IndexedDB read cannot. All other `uiStore` fields (`tab`,
+`commandDraft`, `commandHistory`, `debugConsoleEnabled`, `roomEditTarget`) are session
+state and are explicitly excluded via `partialize`.
+
+**2026-07-14 note (UX-19):** the persisted slice above gained a fourth field,
+`highlightVocab` (default `true`) — the "Highlight known words" settings toggle.
 
 ## 5. Component inventory (React, `src/`)
 
@@ -208,6 +235,12 @@ Restart flow: confirm dialog → delete `autosaves`, `maps`, `transcripts` rows 
 State: use **zustand** (tiny, no boilerplate) with three stores: `engineStore`
 (status, current game), `mapStore` (MapGraph + actions), `uiStore` (tab, drafts,
 sheets). No Redux, no context pyramids.
+
+**2026-07-14 note (UX-19):** `src/engine/dictionary.ts` is a pure story-file parsing
+module (no WASM, no DOM) that reads the Z-machine parser dictionary directly out of the
+uploaded story bytes, so `TapWords` can bold words the game's parser actually
+understands ("you can type this") — fully offline, no LLM. Toggled off via the "Highlight
+known words" row in `MoreScreen` (`uiStore.highlightVocab`, default on).
 
 ## 6. Protocol fixtures (`tests/fixtures/`)
 
@@ -250,6 +283,15 @@ round-trip. Unit tests replay fixtures through the protocol tap and assert the e
 - Local dev on desktop: `npm run dev`. On-phone testing before Pages is set up:
   `npm run dev -- --host` works for layout checks, but PWA/offline features only
   fully function on the HTTPS deployment (documented limitation, don't chase it).
+
+**2026-07-14 note (UX-17):** `public/zork1.z3` is committed as the bundled sample game —
+the one exception to the "never commit story files" rule (`.gitignore` carves it out
+explicitly). It's Microsoft's 2025 MIT-licensed historical-preservation release of Zork I
+(`historicalsource/zork1`'s `COMPILED/zork1.z3`), not the originally-planned
+`advent.z5`/ifarchive.org — that source was unreachable from this environment's network
+policy, while `raw.githubusercontent.com` was. Precached by the service worker
+(`vite.config.ts`'s `globPatterns` gained `z3`) so "Add sample game" works fully offline
+after first load, same as the rest of the app shell.
 
 ## 8. Per-task done-checklists (phase 1)
 
@@ -428,6 +470,6 @@ position.)
 - Turn counter increments on `command` events only.
 - `(unknown)` is a single shared node, not one per dark encounter.
 - Suggested-but-unconfirmed exits (parsing "there is a passage to the west" out of room
-  text and showing it before the player tries it) is a deliberately deferred idea, not
-  an oversight — design sketch in `IMPLEMENTATION_PLAN.md` Task 1.10. Not built because
-  the detection heuristic needs validating against real games' prose first.
+  text and showing it before the player tries it): the detection/diffing/chips half
+  shipped as UX-18 (2026-07-14, §3's note above) — map-rendering of suggestions (the
+  other half of `IMPLEMENTATION_PLAN.md` Task 1.10) is still not built.

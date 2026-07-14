@@ -99,6 +99,48 @@ describe('ExitsRow', () => {
     const { container } = render(<ExitsRow />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('UX-18: renders a suggested chip for a mentioned-but-untried direction', () => {
+    const sendCommand = vi.fn();
+    useEngineStore.setState({ inputType: 'line', sendCommand });
+    const graph = createEmptyGraph();
+    graph.rooms.a = {
+      id: 'a',
+      name: 'A',
+      pos: { x: 0, y: 0 },
+      posLocked: false,
+      flags: {},
+      mentionedDirections: ['w'],
+    };
+    graph.currentRoomId = 'a';
+    useMapStore.setState({ graph });
+
+    render(<ExitsRow />);
+    const suggested = screen.getByLabelText('Try w (mentioned in the text)');
+    fireEvent.click(suggested);
+    expect(sendCommand).toHaveBeenCalledWith('w');
+  });
+
+  it('UX-18: a confirmed edge replaces the suggested chip for the same direction', () => {
+    useEngineStore.setState({ inputType: 'line', sendCommand: vi.fn() });
+    const graph = createEmptyGraph();
+    graph.rooms.a = {
+      id: 'a',
+      name: 'A',
+      pos: { x: 0, y: 0 },
+      posLocked: false,
+      flags: {},
+      mentionedDirections: ['w'],
+    };
+    graph.rooms.b = { id: 'b', name: 'B', pos: { x: -1, y: 0 }, posLocked: false, flags: {} };
+    graph.edges.push({ from: 'a', to: 'b', dir: 'w', status: 'confirmed' });
+    graph.currentRoomId = 'a';
+    useMapStore.setState({ graph });
+
+    render(<ExitsRow />);
+    expect(screen.queryByLabelText('Try w (mentioned in the text)')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Go w')).toBeInTheDocument();
+  });
 });
 
 describe('TapWords', () => {
@@ -181,6 +223,28 @@ describe('TapWords', () => {
       vi.useRealTimers();
     }
   });
+
+  it('UX-19: bolds a word in the game dictionary, not one outside it, and stays tappable', () => {
+    useEngineStore.setState({
+      vocabulary: { words: new Set(['lamp']), truncationLength: 6 },
+    });
+    useUiStore.setState({ highlightVocab: true });
+    render(<TapWords text="A brass lamp sits here." />);
+    expect(screen.getByText('lamp')).toHaveClass('tap-word-vocab');
+    expect(screen.getByText('brass')).not.toHaveClass('tap-word-vocab');
+
+    fireEvent.click(screen.getByText('lamp'));
+    expect(useUiStore.getState().commandDraft).toBe('lamp');
+  });
+
+  it('UX-19: the highlight disables when the setting is off', () => {
+    useEngineStore.setState({
+      vocabulary: { words: new Set(['lamp']), truncationLength: 6 },
+    });
+    useUiStore.setState({ highlightVocab: false });
+    render(<TapWords text="A brass lamp sits here." />);
+    expect(screen.getByText('lamp')).not.toHaveClass('tap-word-vocab');
+  });
 });
 
 describe('CommandBar', () => {
@@ -254,6 +318,29 @@ describe('CommandBar', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('UX-14: swaps to "Tap to continue" for a char prompt, hiding Send and history', () => {
+    const sendChar = vi.fn();
+    useEngineStore.setState({ inputType: 'char', sendChar });
+    render(<CommandBar />);
+    expect(screen.getByText('Tap to continue')).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Send. Long press to repeat last command'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Command history')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Tap to continue'));
+    expect(sendChar).toHaveBeenCalledWith(' ');
+  });
+
+  it('UX-14: typing a key during a char prompt sends it and keeps the input empty', () => {
+    const sendChar = vi.fn();
+    useEngineStore.setState({ inputType: 'char', sendChar });
+    render(<CommandBar />);
+    const keyInput = screen.getByLabelText('Type a single key');
+    fireEvent.change(keyInput, { target: { value: 'n' } });
+    expect(sendChar).toHaveBeenCalledWith('n');
+    expect(keyInput).toHaveValue('');
   });
 });
 

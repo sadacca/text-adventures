@@ -21,6 +21,7 @@ const SEND_LONG_PRESS_CANCEL_PX = 10;
 export function CommandBar() {
   const inputType = useEngineStore((s) => s.inputType);
   const sendCommand = useEngineStore((s) => s.sendCommand);
+  const sendChar = useEngineStore((s) => s.sendChar);
   const draft = useUiStore((s) => s.commandDraft);
   const setDraft = useUiStore((s) => s.setCommandDraft);
   const commandHistory = useUiStore((s) => s.commandHistory);
@@ -59,6 +60,51 @@ export function CommandBar() {
     setDraft(text);
     setHistoryOpen(false);
     inputRef.current?.focus();
+  }
+
+  // UX-14: a `char` input request ("press any key" prompts, menus) needs a different
+  // affordance entirely — the history popover, draft input, and delete-last-word button
+  // are all line-input concepts that don't apply. The shared draft itself is left
+  // untouched in the store so the player's in-progress line survives past the prompt.
+  if (inputType === 'char') {
+    return (
+      <div className="command-bar" style={{ paddingBottom: inset }}>
+        <form
+          className="command-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            haptic();
+            sendChar(' ');
+          }}
+        >
+          <input
+            type="text"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value=""
+            aria-label="Type a single key"
+            placeholder="Type a key…"
+            onChange={(e) => {
+              const ch = e.target.value.slice(-1);
+              if (!ch) return;
+              haptic();
+              sendChar(ch);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                haptic();
+                sendChar('return');
+              }
+            }}
+          />
+          <button type="submit" className="tap-target btn-primary continue-button">
+            Tap to continue
+          </button>
+        </form>
+      </div>
+    );
   }
 
   return (

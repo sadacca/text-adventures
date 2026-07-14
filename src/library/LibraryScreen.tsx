@@ -68,6 +68,20 @@ export function LibraryScreen() {
     await refresh();
   }
 
+  async function addSampleGame() {
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}zork1.z3`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      const record = await addOrTouchGame(bytes, 'Zork I.z3');
+      await resume(record.gameId);
+    } catch {
+      await useDialogStore
+        .getState()
+        .ask({ kind: 'alert', title: 'Could not load the sample game' });
+    }
+  }
+
   async function onDelete(game: GameRecord) {
     const confirmed = await useDialogStore.getState().ask({
       kind: 'confirm',
@@ -125,6 +139,13 @@ export function LibraryScreen() {
             📚
           </span>
           <p>No games yet — upload a story file to get started.</p>
+          <button
+            type="button"
+            className="tap-target btn-primary"
+            onClick={() => void addSampleGame()}
+          >
+            Add sample game
+          </button>
         </div>
       )}
 

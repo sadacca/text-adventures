@@ -221,6 +221,22 @@ set `useEngineStore.setState({ inputType: 'char' })` in a running session at 390
 confirm the command bar swaps to the continue button in all themes. Record what you did
 as a dated note in this task's entry.
 
+**Outcome (2026-07-14): done.** Implemented exactly as specced —
+`EngineHandle.sendChar`/`engine.ts`/`engineStore.sendChar` unchanged from the spec above;
+the `input_requested` branches in `engineStore.ts` were merged into one, gated on
+`event.type === 'line' || response.trim() !== ''` for the commit and `event.type ===
+'line'` for the autosave, so a char prompt's own text (e.g. "press any key") reaches the
+transcript without ever triggering a silent autosave. `CommandBar.tsx` renders the
+continue-button form verbatim from the spec, gated on `inputType === 'char'`.
+`npm run lint`/`npm test`/`npm run format`/`npm run build` all pass; `tests/travelTo.test.ts`
+got the `sendChar() {}` stub, and the two specified `tests/story-ui.test.tsx` cases were
+added (continue button present/Send+history absent/click sends `' '`; typing `n` sends
+`'n'` and the key input stays empty). No story file was bundled in the repo yet at the
+point this task was done (UX-17, later in this same batch, adds one) and no game is
+known to boot straight into a char prompt in ordinary play, so — per this task's own
+acceptance note — verification is the fake-engine unit tests above; a live devtools-poke/
+real-device pass is still open.
+
 ### UX-15: Settings persist across reloads
 
 `uiStore` has no persistence: theme, story font, and text size all reset to defaults on
@@ -277,6 +293,20 @@ and that the same JSON does NOT contain a `commandDraft` key.
 Acceptance: tests pass; manually (or via Playwright against `npm run dev`): set theme
 Retro, story font Serif, text size 120% in More, reload the page — all three survive;
 the theme is applied before first paint (no light-theme flash).
+
+**Outcome (2026-07-14): done.** Implemented exactly as specced —
+`uiStore.ts` wrapped in `persist()` with `partialize` limited to
+`theme`/`fontScale`/`storyFont`; `tests/setup.ts` clears `localStorage` after every test;
+`tests/settingsPersist.test.ts` added. `npm run lint`/`npm test`/`npm run format`/
+`npm run build` all pass. **Live-verified with Playwright** (390×844,
+`npm run build && npm run preview`, real Chromium, not jsdom): set theme Retro, story
+font Serif, and text size to 110% via More, then reloaded the page —
+`localStorage['text-adventures-settings']` held exactly
+`{theme:"retro",fontScale:1.1,storyFont:"serif"}` (no `commandDraft`/`tab`/other session
+keys); after reload, `data-theme="retro"` and `--bg: #0d0d0d` were already applied (no
+flash), and re-opening More showed Retro/Serif still selected and text size still 110%.
+The `tab` correctly reset to Library on reload, confirming it's excluded from
+persistence as intended.
 
 ### UX-16: Launch straight back into the game
 
@@ -353,6 +383,17 @@ game, reload the page → the Story tab is active with scrollback restored, no t
 needed; Android Back from there still walks Story → Library → exit (the existing
 `backButton.ts` chain — verify the Library step actually happens). Note the verification
 in this task's entry, dated.
+
+**Outcome (2026-07-14): done.** Implemented exactly as specced — `src/state/autoResume.ts`
+verbatim, wired into `App.tsx` alongside the existing `attachInstallListeners`/
+`attachBackHandler` boot effects. `tests/autoResume.test.ts` covers all four cases from
+this task's spec (no games; a game with no autosave; a game with a live autosave opens
+Story; the once-per-boot guard). `npm run lint`/`npm test`/`npm run format`/
+`npm run build` all pass. No story file was bundled in the repo yet at this point in the
+batch, so the live Playwright pass (play turns → reload → lands on Story) was deferred to
+right after UX-17 landed the sample game — **done, see UX-17's outcome note below**:
+reloading after playing a turn of `zork1.z3` lands back on the Story tab with scrollback
+intact, no taps needed.
 
 ---
 
@@ -455,6 +496,39 @@ Acceptance: lint/tests/build pass; at 390×844 with an empty library, tapping
 `npm run build && npm run preview`, the flow also works with the network offline
 (precache) — verify with devtools offline mode, and check the button renders correctly
 in all themes.
+
+**Outcome (2026-07-14): done, using `zork1.z3` instead of the originally-specced
+`advent.z5`.** `ifarchive.org`/`mirror.ifarchive.org` both 403 through this environment's
+proxy (confirmed live) — but the owner pointed at `historicalsource/zork1`, Microsoft's
+2025 MIT-licensed historical-preservation release of Zork I, and
+`raw.githubusercontent.com` (unlike `github.com`/`api.github.com`) is reachable. Verified
+before committing: 86,838 bytes, first byte `0x03` (a real Z-machine v3 header), and
+`file` identifies it as "Infocom (Z-machine 3, Release 119, Serial 880429)" — the genuine
+commercial Zork I release. `public/zork1.z3` committed with a `.gitignore` exception,
+`vite.config.ts`'s `globPatterns` gained `z3`, `LibraryScreen.tsx`'s empty state got the
+button + `addSampleGame()` handler (fileName `"Zork I.z3"` → title "Zork I"),
+`licenses.ts` got a full MIT attribution entry (plus a one-line trademark disclaimer,
+since MIT doesn't grant trademark rights and Zork's original publisher may still hold
+one), and `tests/library.test.tsx` covers the empty-state button + stubbed-fetch load
+per the spec. `npm run lint`/`npm test`/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`,
+real Chromium): tapping "Add sample game" on a fresh library actually boots real Zork I —
+the transcript shows the genuine copyright banner and "West of House" — within about a
+second; sending `look` gets the correct room description back; reloading the page lands
+back on the Story tab with scrollback intact (this is also UX-16's own acceptance check,
+verified together here since both needed a real game to test against). Separately,
+with the service worker precache warmed and the browser context set fully offline
+(`context.setOffline(true)`), a **fresh reload and a first-ever tap of "Add sample
+game"** still booted the real game and printed its opening text — confirming the
+precached `.z3` actually serves with zero network, not just the app shell. Button
+legibility checked across all three themes (light/dark/retro) via computed text color
+against each theme's background — all pass.
+
+**Bonus, not scope creep:** this also gives the repo its first real v3 story file — Task
+1.4/1.7's own outcome notes in IMPLEMENTATION_PLAN.md record that no v3 game was
+reachable at the time, so all protocol fixtures are v5-only (`advent.z5`). Not acted on
+here; noting it for whoever next records a v3 fixture.
 
 ### UX-18: Suggested exits from room text [visual check]
 
@@ -627,6 +701,32 @@ Adventure's opening room mentions a road and a gully; `look` around until a comp
 appears in prose): a dashed `?` chip appears for a mentioned-but-untried direction,
 tapping it sends the move, and after the move lands the suggestion is replaced by a
 normal exit chip. Check dashed borders are legible in light, dark, and retro themes.
+
+**Outcome (2026-07-14): done.** Implemented exactly as specced — `src/map/mentions.ts`'s
+`detectMentionedDirections` verbatim; `graph.ts` gained `RoomNode.mentionedDirections`,
+`Automapper.pendingText`/`applyMentions`, and the `buffer_text`-accumulation branch in
+`handleEvent`; `useKnownExits.ts` gained `useSuggestedExits`; `ExitsRow`/`CompassRose`
+render the dashed suggested state; `.chip-suggested`/`.compass-suggested` CSS added.
+`tests/mentions.test.ts` (4 cases), a new `graph.test.ts` describe block (2 cases:
+attribution to the arrival room, and that a mention survives a later confirmed edge —
+filtering that out is the UI hook's job), and 2 new `ExitsRow` cases in
+`story-ui.test.tsx` all added per the spec. `npm run lint`/`npm test`/`npm run format`/
+`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`)
+against the UX-17 sample game — **Zork I, not Adventure** (UX-17 bundled `zork1.z3`
+instead of the originally-planned `advent.z5`; this task's acceptance text above wasn't
+updated for that swap, noting it here instead): West of House's own arrival text ("You
+are standing in an open field **west** of a white house...") produces a dashed "W?" chip
+immediately on boot — a real, live example of exactly the false-positive-prone flavor
+text this heuristic accepts by design. Tapping it sends `w`, and the game responds by
+moving to Forest ("trees in all directions. To the **east**, there appears to be
+sunlight."); the exits row then correctly shows *nothing* for Forest, because the
+automapper's own reverse-edge rule already created an inferred `e` edge back to West of
+House the moment the `w` move confirmed — a live demonstration of `useSuggestedExits`
+correctly excluding directions that already have a live edge of any status, not just
+confirmed. Checked chip legibility (color + border, plus screenshots) in light, dark,
+and retro — dashed border reads clearly against all three.
 
 ---
 
@@ -883,6 +983,36 @@ a reload (UX-15); check the effect stays subtle in all four themes AND all three
 fonts (serif bold in particular). If no real story file is available in the
 environment, note that the live check is pending real-device/owner verification, dated,
 in this task's entry.
+
+**Outcome (2026-07-14): done.** Implemented exactly as specced — `src/engine/dictionary.ts`
+(blorb unwrap, version gate, dictionary-table parsing, Z-text decoding with one-shot
+A1/A2 shifts and the ZSCII escape, custom v5+ alphabet-table support, the verbatim
+stopword list, and `isVocabWord`'s truncation-aware matching); `engineStore.vocabulary`
+set right after `gameTitle` in `openGame`, reset to `null` in `closeGame` and the
+initial reset; `uiStore.highlightVocab` (default on) joins the UX-15 persisted slice;
+`TapWords` computes `vocab = highlightVocab ? vocabulary : null` and adds
+`tap-word-vocab` conditionally without touching the UX-12 long-press logic; the
+"Highlight known words" row in `MoreScreen` follows the Debug-console checkbox pattern
+exactly. `tests/dictionary.test.ts` covers all 6 spec cases (v3 truncation, v5 no
+truncation, stopword/direction filtering, one-shot A1 shift, corruption safety
+including a version-1 file/an out-of-range dictionary address/a 30000 entry count all
+returning null without throwing, and blorb unwrap through a junk chunk exercising the
+odd-length pad byte) plus the two `TapWords` cases in `story-ui.test.tsx`. `npm run
+lint`/`npm test`/`npm run format`/`npm run build` all pass (118 tests total).
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`)
+against the real Zork I dictionary bundled by UX-17 — genuinely reading the actual
+parser dictionary Microsoft's compiler embedded in `zork1.z3`, not a stub: at West of
+House, "House", "white", "boarded", "front", "door.", "small", and "mailbox" render
+bold, while "You", "are", "standing", "in", "an", "open", "field", "west", "of", "a",
+"with", and "There"/"is"/"here." do not — a real, correct split between the game's
+actual nouns/adjectives and function words/stopwords. Toggling "Highlight known words"
+off in More removed all bolding live (0 bold words); toggling back on and reloading the
+page restored it (11 bold words, matching pre-toggle) — confirming both the live toggle
+and its UX-15 persistence. Checked font-weight (600 bold vs. 400 normal) across all 9
+theme × story-font combinations (light/dark/retro × system/serif/mono) — all pass, and
+serif screenshots specifically confirm the bold reads clearly without any color change
+in every theme, exactly the "subtle" design intent.
 
 ---
 

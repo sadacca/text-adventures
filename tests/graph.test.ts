@@ -22,6 +22,10 @@ function status(left: string, turn: number, right = ''): GameEvent {
   return { kind: 'status_line', left, right, raw: [], turn };
 }
 
+function bufferText(text: string, turn: number): GameEvent {
+  return { kind: 'buffer_text', text, turn };
+}
+
 function mkRoom(id: string, name: string): RoomNode {
   return { id, name, pos: { x: 0, y: 0 }, posLocked: false, flags: {} };
 }
@@ -413,5 +417,38 @@ describe('serialization', () => {
     am2.handleEvent(cmd('south', 2));
     am2.handleEvent(status('Kitchen', 2));
     expect(am2.graph.currentRoomId).toBe('kitchen');
+  });
+});
+
+describe('UX-18: mentioned directions', () => {
+  it('attaches a mentioned direction to the arrival room, not the origin', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Hall', 0));
+    am.handleEvent(cmd('n', 1));
+    // Deliberately avoids the word "north" in the movement narration itself (e.g. "You
+    // walk north") — that would also match the heuristic (a known, accepted limitation:
+    // incidental direction words in flavor/movement text, not just exit descriptions,
+    // are indistinguishable from real mentions by design) and muddy this specific
+    // assertion, which is about attribution (arrival room, not origin), not filtering.
+    am.handleEvent(bufferText('You head off.\n\nKitchen\nThere is a door to the west.', 1));
+    am.handleEvent(status('Kitchen', 1));
+
+    expect(am.graph.rooms['kitchen'].mentionedDirections).toEqual(['w']);
+    expect(am.graph.rooms['hall'].mentionedDirections).toBeUndefined();
+  });
+
+  it('keeps a recorded mention even after that direction becomes a confirmed edge', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Hall', 0));
+    am.handleEvent(cmd('n', 1));
+    am.handleEvent(bufferText('There is a door to the west.', 1));
+    am.handleEvent(status('Kitchen', 1));
+
+    am.handleEvent(cmd('w', 2));
+    am.handleEvent(status('Pantry', 2));
+
+    // Detection never un-records a mention — filtering it once a real edge exists is
+    // the UI hook's job (useSuggestedExits), not the graph's.
+    expect(am.graph.rooms['kitchen'].mentionedDirections).toEqual(['w']);
   });
 });

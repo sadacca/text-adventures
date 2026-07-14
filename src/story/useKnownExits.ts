@@ -22,3 +22,22 @@ export function useKnownExits(): Set<Direction> {
     return exits;
   }, [graph]);
 }
+
+/** UX-18: directions mentioned in the current room's prose that have no live edge yet
+ *  (any status) — soft suggestions, never map-affecting. */
+export function useSuggestedExits(): Set<Direction> {
+  const graph = useMapStore((s) => s.graph);
+  return useMemo(() => {
+    const out = new Set<Direction>();
+    const id = graph.currentRoomId;
+    const room = id ? graph.rooms[id] : undefined;
+    if (!id || !room?.mentionedDirections) return out;
+    const edged = new Set(
+      graph.edges.filter((e) => e.from === id && !e.userDeleted).map((e) => e.dir),
+    );
+    for (const dir of room.mentionedDirections) {
+      if (!edged.has(dir)) out.add(dir);
+    }
+    return out;
+  }, [graph]);
+}

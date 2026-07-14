@@ -133,6 +133,14 @@ export function createEngine(): EngineHandle {
       dispatch(text, false);
     },
 
+    sendChar(value) {
+      // Deliberately does NOT touch busy/queuedCommands: `busy` stays true across a char
+      // prompt (queued *line* commands must not fire into it), and the line request that
+      // follows the game's response to this keypress is what clears it and drains the
+      // queue, via the existing internal listener.
+      glkote.sendChar(value);
+    },
+
     on(listener) {
       return glkote_on(listener);
     },

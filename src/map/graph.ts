@@ -1,5 +1,6 @@
 import type { GameEvent } from '../engine/types.js';
-import { isCompassDirection, normalizeDirection, opposite } from './directions.js';
+import { ALL_DIRECTIONS, isCompassDirection, normalizeDirection, opposite } from './directions.js';
+import { detectMentionedDirections } from './mentions.js';
 
 export type Direction =
   'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | 'up' | 'down' | 'in' | 'out';
@@ -12,6 +13,9 @@ export interface RoomNode {
   note?: string;
   flags: { unknown?: boolean; teleportTarget?: boolean; userCreated?: boolean };
   firstDescription?: string; // first buffer_text on first arrival (feeds phase 3 art)
+  /** UX-18 / Task 1.10: compass directions seen mentioned in this room's prose that have
+   *  no confirmed edge (yet). A soft suggestion, never map-affecting — see mentions.ts. */
+  mentionedDirections?: Direction[];
 }
 
 export interface RoomEdge {
@@ -246,6 +250,9 @@ type Pending =
 export class Automapper {
   readonly graph: MapGraph;
   private pending: Pending;
+  /** UX-18: accumulates buffer_text seen since the last status_line, so mentions can be
+   *  attributed to whichever room the turn resolves to (see applyMentions). */
+  private pendingText = '';
 
   constructor(graph: MapGraph = createEmptyGraph()) {
     this.graph = graph;
@@ -258,7 +265,30 @@ export class Automapper {
       this.pending = dir ? { kind: 'move', dir } : { kind: 'other', label: event.text.trim() };
       return;
     }
-    if (event.kind === 'status_line') this.handleStatusLine(event.left);
+    if (event.kind === 'buffer_text') {
+      this.pendingText += '\n' + event.text;
+      return;
+    }
+    if (event.kind === 'status_line') {
+      const text = this.pendingText;
+      this.pendingText = '';
+      this.handleStatusLine(event.left);
+      this.applyMentions(text);
+    }
+  }
+
+  /** UX-18: attach direction words seen in this turn's prose to the room the turn
+   *  resolved to. Runs AFTER handleStatusLine so movement text ("You walk north…
+   *  Kitchen") attributes to the arrival room, not the origin. */
+  private applyMentions(text: string): void {
+    const id = this.graph.currentRoomId;
+    if (!id || id === UNKNOWN_ROOM_ID) return;
+    const room = this.graph.rooms[id];
+    if (!room) return;
+    const found = detectMentionedDirections(text);
+    if (found.length === 0) return;
+    const merged = new Set([...(room.mentionedDirections ?? []), ...found]);
+    room.mentionedDirections = ALL_DIRECTIONS.filter((d) => merged.has(d));
   }
 
   private handleStatusLine(rawLeft: string): void {
