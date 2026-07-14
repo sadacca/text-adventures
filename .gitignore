@@ -40,6 +40,10 @@ dist-ssr
 *.blorb
 *.gblorb
 
+# Exception: the bundled sample game is MIT-licensed (Microsoft's 2025 historical-source
+# release of Zork I, historicalsource/zork1), so it may be committed.
+!public/zork1.z3
+
 # vitest / coverage
 coverage
 .tsbuildinfo

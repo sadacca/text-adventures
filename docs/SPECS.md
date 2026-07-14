@@ -259,6 +259,15 @@ round-trip. Unit tests replay fixtures through the protocol tap and assert the e
   `npm run dev -- --host` works for layout checks, but PWA/offline features only
   fully function on the HTTPS deployment (documented limitation, don't chase it).
 
+**2026-07-14 note (UX-17):** `public/zork1.z3` is committed as the bundled sample game —
+the one exception to the "never commit story files" rule (`.gitignore` carves it out
+explicitly). It's Microsoft's 2025 MIT-licensed historical-preservation release of Zork I
+(`historicalsource/zork1`'s `COMPILED/zork1.z3`), not the originally-planned
+`advent.z5`/ifarchive.org — that source was unreachable from this environment's network
+policy, while `raw.githubusercontent.com` was. Precached by the service worker
+(`vite.config.ts`'s `globPatterns` gained `z3`) so "Add sample game" works fully offline
+after first load, same as the rest of the app shell.
+
 ## 8. Per-task done-checklists (phase 1)
 
 **1.1 Scaffold** ☑ Vite+React+TS builds ☑ vitest runs an example test ☑ ESLint+Prettier

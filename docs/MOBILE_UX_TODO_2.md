@@ -390,9 +390,10 @@ verbatim, wired into `App.tsx` alongside the existing `attachInstallListeners`/
 this task's spec (no games; a game with no autosave; a game with a live autosave opens
 Story; the once-per-boot guard). `npm run lint`/`npm test`/`npm run format`/
 `npm run build` all pass. No story file was bundled in the repo yet at this point in the
-batch, so the live Playwright pass (play turns → reload → lands on Story) is deferred to
-right after UX-17 lands the sample game next — see UX-17's own outcome note for that
-combined verification.
+batch, so the live Playwright pass (play turns → reload → lands on Story) was deferred to
+right after UX-17 landed the sample game — **done, see UX-17's outcome note below**:
+reloading after playing a turn of `zork1.z3` lands back on the Story tab with scrollback
+intact, no taps needed.
 
 ---
 
@@ -495,6 +496,39 @@ Acceptance: lint/tests/build pass; at 390×844 with an empty library, tapping
 `npm run build && npm run preview`, the flow also works with the network offline
 (precache) — verify with devtools offline mode, and check the button renders correctly
 in all themes.
+
+**Outcome (2026-07-14): done, using `zork1.z3` instead of the originally-specced
+`advent.z5`.** `ifarchive.org`/`mirror.ifarchive.org` both 403 through this environment's
+proxy (confirmed live) — but the owner pointed at `historicalsource/zork1`, Microsoft's
+2025 MIT-licensed historical-preservation release of Zork I, and
+`raw.githubusercontent.com` (unlike `github.com`/`api.github.com`) is reachable. Verified
+before committing: 86,838 bytes, first byte `0x03` (a real Z-machine v3 header), and
+`file` identifies it as "Infocom (Z-machine 3, Release 119, Serial 880429)" — the genuine
+commercial Zork I release. `public/zork1.z3` committed with a `.gitignore` exception,
+`vite.config.ts`'s `globPatterns` gained `z3`, `LibraryScreen.tsx`'s empty state got the
+button + `addSampleGame()` handler (fileName `"Zork I.z3"` → title "Zork I"),
+`licenses.ts` got a full MIT attribution entry (plus a one-line trademark disclaimer,
+since MIT doesn't grant trademark rights and Zork's original publisher may still hold
+one), and `tests/library.test.tsx` covers the empty-state button + stubbed-fetch load
+per the spec. `npm run lint`/`npm test`/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`,
+real Chromium): tapping "Add sample game" on a fresh library actually boots real Zork I —
+the transcript shows the genuine copyright banner and "West of House" — within about a
+second; sending `look` gets the correct room description back; reloading the page lands
+back on the Story tab with scrollback intact (this is also UX-16's own acceptance check,
+verified together here since both needed a real game to test against). Separately,
+with the service worker precache warmed and the browser context set fully offline
+(`context.setOffline(true)`), a **fresh reload and a first-ever tap of "Add sample
+game"** still booted the real game and printed its opening text — confirming the
+precached `.z3` actually serves with zero network, not just the app shell. Button
+legibility checked across all three themes (light/dark/retro) via computed text color
+against each theme's background — all pass.
+
+**Bonus, not scope creep:** this also gives the repo its first real v3 story file — Task
+1.4/1.7's own outcome notes in IMPLEMENTATION_PLAN.md record that no v3 game was
+reachable at the time, so all protocol fixtures are v5-only (`advent.z5`). Not acted on
+here; noting it for whoever next records a v3 fixture.
 
 ### UX-18: Suggested exits from room text [visual check]
 

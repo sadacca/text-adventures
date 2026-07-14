@@ -88,4 +88,18 @@ PERFORMANCE OF THIS SOFTWARE.`,
     license: 'MIT',
     text: MIT_BODY('Copyright OpenJS Foundation and other contributors <https://openjsf.org/>'),
   },
+  {
+    name: 'Zork I (zork1.z3)',
+    role: 'Bundled sample game',
+    license: 'MIT',
+    text: `${MIT_BODY('Copyright (c) 2025 Microsoft')}
+
+Original game (1977-1979) by Marc Blank, Dave Lebling, Bruce Daniels, and Tim
+Anderson. Microsoft released this MDL source and its compiled story file as a
+historical-preservation project in 2025 (github.com/historicalsource/zork1)
+under the MIT license above; this app bundles the prebuilt COMPILED/zork1.z3
+binary unmodified. This is an unofficial fan use of a historical release, not
+an endorsed or official Zork product; "Zork" may still be a trademark of its
+current rights holder independent of this MIT grant.`,
+  },
 ];
