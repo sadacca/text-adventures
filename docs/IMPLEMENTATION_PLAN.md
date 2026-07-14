@@ -116,8 +116,15 @@ first; anything wider just gets more breathing room.
 
 ### 1.7 Licensing and content rules
 
-- App code MIT. AsyncGlk/emglken/Parchment MIT; **Bocfel is GPL-2.0** — we use it as an
-  unmodified prebuilt binary component; do not copy its source into this repo.
+- App code MIT. AsyncGlk/emglken/Parchment MIT. **Correction (2026-07-13, Task 1.9):**
+  this line originally said "Bocfel is GPL-2.0" — checked against Bocfel's actual
+  upstream LICENSE (`garglk/garglk`'s `terps/bocfel/LICENSE`, the fork emglken vendors)
+  and it's **MIT** (Chris Spiegel), not GPL-2.0. GPL-2.0 interpreters do exist inside
+  emglken's npm bundle (Scare, TADS — hence the *package's* own `license` field saying
+  GPL-2.0), but this app only ships `bocfel.wasm`, which is MIT. Still consumed as an
+  unmodified prebuilt binary component either way; do not copy its source into this
+  repo. See SPECS.md Task 1.9's outcome note and `src/more/licenses.ts` for the
+  corrected, verified attribution.
 - **Never commit Infocom story files.** Add `*.z1`–`*.z8`, `*.dat`, `*.zblorb` to
   `.gitignore`. Users load their own files. For dev/tests, download freely
   redistributable games at build/test time (e.g. `advent.z5` — public-domain Adventure;
@@ -740,7 +747,7 @@ Acceptance: sideloaded APK plays a game, saves, maps, and restores fully offline
 | Status-line room name unreliable in some games (v5+ custom status, v6) | Manual "mark room" button; disambiguation rules in Task 1.6; memory-peeking enhancement later |
 | Autosave unachievable in our own wiring (gating — §1.6) | Task 1.3 proves it in a spike before further engine work; Parchment-iframe fallback inherits Parchment's own autosave |
 | Mobile soft-keyboard quirks (viewport jumps, autocorrect, focus loss) | Task 1.7 addresses directly (`visualViewport`, input attributes); command-assist UI reduces typing to near zero; test on real Android Chrome each phase |
-| Bocfel GPL-2.0 | Consume unmodified prebuilt WASM; keep app code separate; attribute in About screen |
+| Bocfel is MIT, not GPL-2.0 as originally assumed here (corrected 2026-07-13 — §1.7) | Consume unmodified prebuilt WASM; keep app code separate; attribute in About screen |
 | Copyright of Infocom games | Never bundle; user-supplied files only; test with free games |
 | LLM hints hallucinate puzzle solutions | Honesty instructions + optional user-supplied walkthrough grounding |
 

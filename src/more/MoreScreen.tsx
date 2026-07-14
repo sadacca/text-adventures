@@ -1,6 +1,8 @@
 import { useEngineStore } from '../state/engineStore';
 import { useUiStore, type UiState } from '../state/uiStore';
+import { useInstallStore } from '../state/installStore';
 import { deleteSave, exportSave, importSave } from '../storage/saves';
+import { AboutSection } from './AboutSection';
 
 const THEME_OPTIONS: { value: UiState['theme']; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -34,16 +36,48 @@ export function MoreScreen() {
   const setTheme = useUiStore((s) => s.setTheme);
   const fontScale = useUiStore((s) => s.fontScale);
   const setFontScale = useUiStore((s) => s.setFontScale);
+  const installPromptEvent = useInstallStore((s) => s.promptEvent);
+  const installed = useInstallStore((s) => s.installed);
+  const markInstalled = useInstallStore((s) => s.markInstalled);
+  const clearInstallPrompt = useInstallStore((s) => s.setPromptEvent);
 
   function nudgeFontScale(delta: number) {
     const next = Math.round((fontScale + delta) * 100) / 100;
     setFontScale(Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, next)));
   }
 
+  async function onInstall() {
+    if (!installPromptEvent) return;
+    await installPromptEvent.prompt();
+    const choice = await installPromptEvent.userChoice;
+    // Chrome invalidates the event after one use either way — accepted or dismissed.
+    if (choice.outcome === 'accepted') markInstalled();
+    else clearInstallPrompt(null);
+  }
+
   const settingsSection = (
     <section>
       <h2>Settings</h2>
       <div className="settings-card">
+        {installPromptEvent && !installed && (
+          <div className="settings-row">
+            <span className="settings-row-label">
+              Install app
+              <span className="settings-row-hint">Add to your home screen, works offline</span>
+            </span>
+            <button type="button" className="tap-target btn-primary" onClick={() => void onInstall()}>
+              Install
+            </button>
+          </div>
+        )}
+        {installed && (
+          <div className="settings-row">
+            <span className="settings-row-label">
+              Install app
+              <span className="settings-row-hint">Already installed on this device</span>
+            </span>
+          </div>
+        )}
         <div className="settings-row">
           <span className="settings-row-label">Theme</span>
           <div className="segmented" role="group" aria-label="Theme">
@@ -105,12 +139,13 @@ export function MoreScreen() {
         <h1>More</h1>
         {settingsSection}
         <h2>Saves</h2>
-        <div className="empty-state">
+        <div className="empty-state empty-state-inline">
           <span className="empty-state-icon" aria-hidden="true">
             💾
           </span>
           <p>Open a game from the Library to see its saves.</p>
         </div>
+        <AboutSection />
       </div>
     );
   }
@@ -156,7 +191,7 @@ export function MoreScreen() {
         </div>
 
         {saves.length === 0 && (
-          <div className="empty-state">
+          <div className="empty-state empty-state-inline">
             <span className="empty-state-icon" aria-hidden="true">
               💾
             </span>
@@ -199,6 +234,8 @@ export function MoreScreen() {
           ))}
         </ul>
       </section>
+
+      <AboutSection />
     </div>
   );
 }

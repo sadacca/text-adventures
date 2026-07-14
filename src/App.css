@@ -89,6 +89,13 @@
   color: var(--text-dim);
 }
 
+/* For an empty-state embedded alongside other sections (MoreScreen's "no game open"
+   Saves note) rather than one that IS the whole screen — no flex:1 grab, less padding. */
+.empty-state-inline {
+  flex: 0 1 auto;
+  padding: var(--space-4);
+}
+
 .empty-state-icon {
   font-size: 36px;
   line-height: 1;
@@ -398,6 +405,70 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
+}
+
+.about-card {
+  padding: var(--space-3) var(--space-4);
+  gap: var(--space-2);
+}
+
+.about-blurb {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.license-entry {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.license-entry summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  cursor: pointer;
+  list-style: none;
+  padding: var(--space-1) 0;
+}
+
+.license-entry summary::-webkit-details-marker {
+  display: none;
+}
+
+.license-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.license-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.license-role {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.license-text {
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 .debug-console {

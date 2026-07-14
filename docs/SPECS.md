@@ -327,9 +327,9 @@ Playwright pass).
 Not verified this session (needs a real device / multi-touch harness — see PLAN outcome
 notes): two-finger pinch-zoom and the >8-move long-trip confirm dialog.
 
-**1.9 Polish/offline** ☑ font-size control ☑ dark/light ☐ install prompt on Android
-Chrome via Pages URL ☐ airplane-mode reload works ☐ licenses screen (incl. Bocfel
-GPL-2.0 attribution) ☐ full on-device session verified.
+**1.9 Polish/offline** ☑ font-size control ☑ dark/light ☑ install prompt ☑ airplane-mode
+reload works (simulated) ☑ licenses screen ☐ full on-device session verified (the one
+item that genuinely needs real hardware — see note below).
 (2026-07-13: first slice only — a "beautification" pass, owner-scoped to exclude
 install-prompt/licenses/offline-device-verification for now. Theme (`uiStore.theme`)
 and `fontScale` already had store plumbing and a `data-theme`/root-`font-size` effect in
@@ -357,6 +357,49 @@ trim gated on `get().transcript.length === 0` (only the transcript's very first 
 so normal inter-turn spacing elsewhere is untouched).
 Verified via Playwright against a real `advent.z5` session (light + dark + forced
 theme override + increased font scale), plus `npm run lint`/`npm test`/`npm run build`.)
+(2026-07-13, second slice: licenses screen, install prompt, and offline verification.)
+
+- **Licenses/about screen** (`src/more/AboutSection.tsx`, `src/more/licenses.ts`):
+  rendered in `MoreScreen` below Saves, one native `<details>` per dependency (name,
+  license badge, role, full license text) — no extra JS/state needed for the
+  expand/collapse. **Correction to this doc's own prior wording**: SPECS.md and
+  IMPLEMENTATION_PLAN.md both said "Bocfel GPL-2.0" — checked the actual upstream
+  license (`garglk/garglk`'s `terps/bocfel/LICENSE`, the fork emglken vendors) and it's
+  **MIT** (Chris Spiegel), not GPL-2.0. GPL-2.0 code does exist inside emglken's own npm
+  bundle (Scare, TADS) — which is why the *package's* `license` field says GPL-2.0 — but
+  those interpreters aren't the one this app ships (`bocfel.wasm` only). The licenses
+  screen states the correct MIT attribution; treat any earlier "GPL-2.0" mention in
+  these docs as superseded by this note.
+- **Install prompt** (`src/state/installStore.ts`, wired from `App.tsx`, UI in
+  `MoreScreen.tsx`): captures and defers `beforeinstallprompt` (Chrome only fires it
+  once per load) behind a settings-card row with an "Install" button; `appinstalled`
+  and an initial `display-mode: standalone` check hide the row once actually installed.
+  **Verified against the production build** (`vite preview`) with Playwright + a
+  *non-incognito* persistent Chrome profile (an ephemeral/incognito context — Playwright's
+  default — makes Chrome refuse to fire the event at all, which cost some time to
+  diagnose): Chrome's own `Page.getInstallabilityErrors` CDP check returns zero errors,
+  `beforeinstallprompt` genuinely fires, our button appears and calls `.prompt()`
+  without error. **Lighthouse's PWA category no longer exists** (removed entirely by
+  Lighthouse 13, the version available here) — `Page.getInstallabilityErrors` is the
+  modern equivalent and is what was actually used to satisfy this acceptance check.
+- **Offline verification**: `context.setOffline(true)` in Playwright against the
+  production build (not a real device — the honest substitute available here) —
+  confirmed (a) a full reload with zero network serves the app shell from the
+  workbox precache (12 entries, both the hashed and unhashed `bocfel.wasm` among them)
+  rather than a browser offline error page, (b) tab navigation works fully offline, and
+  (c) — the acceptance bar that actually matters — uploading and **playing `advent.z5`
+  start-to-finish while fully offline works**, proving the WASM interpreter itself
+  loads from cache correctly, not just the shell (this is exactly the class of bug
+  Task 1.3's deploy gotcha in §7 was about, so it was worth re-checking specifically,
+  not just assuming the earlier fix still holds).
+- **One real bug caught by this pass's own test run**: `installStore.ts`'s module-level
+  `runningStandalone()` called `window.matchMedia` unconditionally, which crashed
+  `src/App.test.tsx` under jsdom (no `matchMedia` there) the moment anything imported
+  `App.tsx` — guarded behind a `typeof window.matchMedia === 'function'` check.
+- **Still open, and genuinely needs real hardware** (not simulable here): the actual
+  on-device install banner/home-screen icon on Android Chrome, a real airplane-mode
+  reload on a phone, and Task 1.7/1.8's own still-open real-device items (soft-keyboard
+  inset, two-finger pinch-zoom, long-trip confirm dialog).
 
 ## 9. Known judgment calls already made (do not re-litigate)
 
