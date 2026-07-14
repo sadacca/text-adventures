@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useUiStore, type Tab } from './state/uiStore';
 import { attachInstallListeners } from './state/installStore';
+import { attachBackHandler } from './state/backButton';
 import { LibraryScreen } from './library/LibraryScreen';
 import { StoryScreen } from './story/StoryScreen';
 import { MapScreen } from './map/MapScreen';
@@ -58,6 +59,10 @@ function App() {
   // Registered once at the top level: beforeinstallprompt can fire before any
   // particular tab is mounted, and Chrome only ever dispatches it once per load.
   useEffect(() => attachInstallListeners(), []);
+
+  // Registered once at the top level: traps a single history entry so Android's system
+  // Back always closes the topmost sheet/tab first instead of exiting the installed PWA.
+  useEffect(() => attachBackHandler(), []);
 
   return (
     <div className="app-shell">

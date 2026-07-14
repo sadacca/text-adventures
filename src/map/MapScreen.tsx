@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import { useMapStore } from '../state/mapStore';
 import { useDialogStore } from '../state/dialogStore';
+import { useUiStore } from '../state/uiStore';
 import { computePath, isLongTrip } from './travel';
 import type { MapGraph, RoomEdge, RoomNode } from './graph';
 import { isCompassDirection, isStubDirection } from './directions';
@@ -110,7 +111,8 @@ export function MapScreen() {
 
   const [viewBox, setViewBox] = useState<ViewBox | null>(null);
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const editingRoomId = useUiStore((s) => s.roomEditTarget);
+  const setEditingRoomId = useUiStore((s) => s.setRoomEditTarget);
   const [toast, setToast] = useState<string | null>(null);
   const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null);
 
