@@ -1,7 +1,7 @@
 # Mobile UX TODO, round 2 — implementation handoff
 
 Source: owner-reviewed follow-up to `ANDROID_UX_TODO.md` (2026-07-14). All 13 tasks in
-that document are done and merged. This document specs the next two batches. It is
+that document are done and merged. This document specs the next three batches. It is
 written for a smaller implementing model: every task pins down the exact files, the
 exact behavior, and an acceptance check. **Do not improvise beyond what a task says.**
 If something is ambiguous or a task's instructions conflict with what you find in the
@@ -371,11 +371,15 @@ Woods' public-domain Adventure — freely redistributable) into `public/advent.z
 curl -L -o public/advent.z5 https://ifarchive.org/if-archive/games/zcode/advent.z5
 ```
 
-If that URL 404s, try `Advent.z5` (capital A). Sanity-check the download: the first byte
-must be `0x05` (Z-machine version 5 — check with `od -An -tu1 -N1 public/advent.z5`)
-and the size should be roughly 100–260 KB. If you cannot obtain the file (no network),
-STOP this task per the global rules — do not substitute a different game or fabricate
-bytes.
+If that URL 404s, try `Advent.z5` (capital A), or the mirror
+`https://mirror.ifarchive.org/if-archive/games/zcode/advent.z5`. Sanity-check the
+download: the first byte must be `0x05` (Z-machine version 5 — check with
+`od -An -tu1 -N1 public/advent.z5`) and the size should be roughly 100–260 KB. If you
+cannot obtain the file, STOP this task per the global rules — do not substitute a
+different game or fabricate bytes. **Known blocker (2026-07-14):** `ifarchive.org` is
+denied by the remote sandbox's network policy (proxy 403), so this step may have to be
+done by the owner locally, or the domain allowed in the environment's network settings,
+before this task can proceed.
 
 **2. `.gitignore`**: the story-file block deliberately ignores `*.z5`. Add an exception
 line directly after that block, keeping the existing comment intact:
@@ -626,20 +630,287 @@ normal exit chip. Check dashed borders are legible in light, dark, and retro the
 
 ---
 
+## Batch 3 — story-file smarts
+
+### UX-19: Vocabulary highlighting from the game's own dictionary [visual check]
+
+**Owner-approved (2026-07-14), promoted from this file's appendix.** Every Z-machine
+story file embeds its parser dictionary: the complete list of words the game
+understands. Parsing it lets the transcript subtly emphasize words the player can
+actually interact with — real nouns light up, filler prose doesn't — fully offline,
+pure byte-reading, no LLM. The emphasis must be **subtle** (owner decision: plain bold,
+no color change) and **toggleable in settings** (default ON).
+
+**Ordering dependency:** do this task after UX-15 (its settings toggle joins the
+persisted fields). It does not depend on UX-14/16/17/18.
+
+Format references below are the Z-Machine Standards Document 1.1, §13 (dictionary) and
+§3 (text encoding). All offsets are big-endian. **Note (2026-07-14):** the standard's
+website and a live `advent.z5` were both unreachable from the authoring environment
+(network policy), so the byte layout below is from the standard as known — the
+encoder/decoder round-trip tests in this task are the authoritative check, and the
+acceptance step includes a real-file sanity check. If a real story file disagrees with
+this spec, STOP and leave a `TODO(owner):` note rather than improvising.
+
+**1. Parser** — new file `src/engine/dictionary.ts` (this task's named exception to the
+`src/engine/` rule; a pure module — no WASM, no DOM, no imports from the rest of
+`src/engine/`):
+
+```ts
+export interface Vocabulary {
+  /** Lowercased dictionary words, already stopword-/direction-filtered. */
+  words: Set<string>;
+  /** Stored dictionary words are truncated to this many Z-characters: 6 in v1–3
+   *  files, 9 in v4+. Used for prefix matching ("lantern" -> stored "lanter"). */
+  truncationLength: 6 | 9;
+}
+
+/** Parses the parser dictionary out of Z-machine story bytes (bare z-code or a blorb
+ *  wrapper). Returns null — never throws — on anything unparseable: wrong version,
+ *  truncated file, out-of-range addresses. Callers treat null as "feature off". */
+export function parseVocabulary(bytes: Uint8Array): Vocabulary | null;
+```
+
+Implementation, in order (wrap the whole body in `try { ... } catch { return null; }`
+AND bounds-check every read — a corrupt upload must never crash `openGame`):
+
+1. **Blorb unwrap.** If bytes 0–3 are `FORM` and bytes 8–11 are `IFRS` (a blorb —
+   compare with `src/storage/gameId.ts`'s `detectFormat`), walk the IFF chunks starting
+   at offset 12: each chunk is a 4-byte id, a 4-byte big-endian length, `length` data
+   bytes, plus one pad byte when `length` is odd. Take the contents of the first `ZCOD`
+   chunk as the story bytes; if there is none, return null.
+2. **Version gate.** Byte 0 of the story is the Z-machine version. Accept 3–8 only;
+   return null for 1, 2, or anything else (v1/v2 use different shift semantics and are
+   effectively extinct — not worth the code).
+3. **Dictionary address**: the 16-bit word at offset `0x08` (byte address into the
+   story bytes).
+4. **Dictionary layout** (Standard §13.2), starting at that address:
+   - 1 byte: number of word separators `n`; skip the next `n` bytes (separator ZSCII
+     codes, e.g. `.` and `,` — not needed).
+   - 1 byte: `entryLength` (bytes per entry). Must be ≥ 4 for v3, ≥ 6 for v4+;
+     otherwise return null.
+   - 2 bytes: entry count, read as a signed 16-bit value and `Math.abs`'d (a negative
+     count means "unsorted" and is legal). If the count is 0, > 20000, or
+     `address + count * entryLength` runs past the end of the bytes, return null.
+   - Then `count` entries of `entryLength` bytes each. Only the encoded text at the
+     start of each entry matters: 4 bytes (= 6 Z-characters) in v3, 6 bytes (= 9
+     Z-characters) in v4+. The remaining data bytes per entry are game-specific flags —
+     ignore them (they are NOT reliable part-of-speech data across compilers).
+5. **Z-text decoding** (Standard §3) for each entry, producing a lowercase string or
+   null (skip the entry) if anything unexpected appears:
+   - Each 16-bit word holds three 5-bit Z-characters (bits 14–10, 9–5, 4–0). The top
+     bit of the word marks the end of the string; for fixed-length dictionary text just
+     decode all 6/9 Z-characters.
+   - Alphabets (v3+ defaults):
+     - A0 (codes 6–31): `abcdefghijklmnopqrstuvwxyz`
+     - A1 (codes 6–31): `ABCDEFGHIJKLMNOPQRSTUVWXYZ`
+     - A2 (codes 6–31): code 6 = ZSCII escape, code 7 = newline, codes 8–31 =
+       `0123456789.,!?_#'"/\-:()`
+   - Z-char 0 = space; Z-chars 1–3 = abbreviation escapes (never legitimately used in
+     dictionary words — treat as "skip this entry"); Z-char 4 = shift the NEXT char to
+     A1; Z-char 5 = shift the NEXT char to A2 (one-shot shifts, current alphabet
+     returns to A0 after); trailing padding is by convention Z-char 5s — bare trailing
+     5s (a shift with nothing after it) simply end the word.
+   - A2 code 6 (ZSCII escape): the next TWO Z-characters form a 10-bit ZSCII code
+     (first is the top 5 bits). Map codes 32–126 to ASCII; anything else, skip the
+     entry.
+   - **Custom alphabet (v5+):** if the 16-bit word at story offset `0x34` is nonzero,
+     it is the byte address of a 78-byte alphabet table — 26 ZSCII bytes each for
+     A0, A1, A2 (in that order), replacing the defaults for codes 6–31. Regardless of
+     the table's contents, A2 code 6 stays the ZSCII escape and A2 code 7 stays newline
+     (Standard §3.5.5).
+6. **Filtering**, applied to each decoded word before it enters the set:
+   - keep only words matching `/^[a-z][a-z'-]+$/` (dictionaries contain bare
+     punctuation entries like `,` and `"` as separators, plus digit strings — drop
+     them; minimum length 2);
+   - drop words in `VOCAB_STOPWORDS` (below).
+
+   Define in the same file (exact list — copy verbatim):
+
+   ```ts
+   /** Function words, parser verbs already covered by chips, and direction words
+    *  already covered by the exits row/compass — highlighting these would make the
+    *  whole transcript bold. (Direction aliases duplicated from src/map/directions.ts
+    *  rather than imported: that module is a verified subsystem this task must not
+    *  modify, and its ALIASES table is deliberately not exported.) */
+   const VOCAB_STOPWORDS = new Set([
+     // articles, determiners, pronouns
+     'a', 'an', 'the', 'all', 'some', 'any', 'this', 'that', 'these', 'those', 'each',
+     'every', 'both', 'other', 'it', 'its', 'me', 'my', 'you', 'your', 'he', 'him',
+     'his', 'she', 'her', 'they', 'them', 'their', 'we', 'us', 'our', 'itself',
+     'myself', 'yourself', 'one', 'ones',
+     // prepositions, conjunctions, adverbs
+     'at', 'of', 'to', 'for', 'from', 'with', 'without', 'into', 'onto', 'under',
+     'over', 'behind', 'above', 'below', 'across', 'through', 'about', 'around',
+     'between', 'beside', 'near', 'and', 'or', 'but', 'not', 'if', 'then', 'when',
+     'while', 'as', 'so', 'than', 'too', 'very', 'here', 'there', 'now', 'again',
+     'off', 'on', 'yes', 'no', 'oh', 'please',
+     // auxiliaries and parser verbs the chips already cover
+     'is', 'are', 'was', 'were', 'be', 'been', 'am', 'do', 'does', 'did', 'have',
+     'has', 'had', 'can', 'could', 'will', 'would', 'shall', 'should', 'may', 'might',
+     'must', 'go', 'get', 'put', 'look', 'take', 'drop', 'open', 'close', 'examine',
+     'inventory', 'wait', 'say', 'tell', 'ask', 'give', 'read', 'search', 'quit',
+     'save', 'restore', 'restart', 'verbose', 'brief', 'score',
+     // directions (mirror of directions.ts ALIASES, plus bare abbreviations)
+     'n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw', 'u', 'd', 'north', 'south', 'east',
+     'west', 'northeast', 'northwest', 'southeast', 'southwest', 'up', 'down', 'in',
+     'out', 'enter', 'exit', 'leave',
+   ]);
+   ```
+
+   Export a matching helper (this is what the UI calls per token):
+
+   ```ts
+   /** True when `word` (any case) is in the game's vocabulary, including the
+    *  truncated-storage case: "lantern" matches a stored "lanter" in a v3 game.
+    *  Approximation: truncation is measured in Z-characters, not letters, so words
+    *  with non-a-z characters can be truncated earlier than `truncationLength` —
+    *  those rare cases just miss the highlight, which is fine. */
+   export function isVocabWord(word: string, vocab: Vocabulary): boolean {
+     const lower = word.toLowerCase();
+     return (
+       vocab.words.has(lower) ||
+       (lower.length > vocab.truncationLength &&
+         vocab.words.has(lower.slice(0, vocab.truncationLength)))
+     );
+   }
+   ```
+
+**2. Store plumbing**:
+
+- `src/state/engineStore.ts`: add `vocabulary: Vocabulary | null` to `EngineState`
+  (initial `null`). In `openGame`, right after the `set({ gameTitle: game.title })`
+  line: `set({ vocabulary: parseVocabulary(new Uint8Array(game.bytes)) });` (the
+  function already returns null on failure — no extra guard). Reset to `null` in
+  `closeGame` and in `openGame`'s initial reset `set`.
+- `src/state/uiStore.ts`: add `highlightVocab: boolean` (default `true`) with setter
+  `setHighlightVocab`, and add `highlightVocab` to the UX-15 `partialize` so it
+  persists.
+
+**3. Rendering** (`src/story/TapWords.tsx`): inside the component, select
+`const vocabulary = useEngineStore((s) => s.vocabulary);` and
+`const highlightVocab = useUiStore((s) => s.highlightVocab);`; compute
+`const vocab = highlightVocab ? vocabulary : null;` and pass `vocab` through to
+`renderLineTokens` as a new parameter. In the word-span render, the className becomes:
+
+```ts
+const isVocab = vocab !== null && isVocabWord(word, vocab);
+// ...
+className={`tap-word${isVocab ? ' tap-word-vocab' : ''}`}
+```
+
+(zustand hooks inside a `memo` component still resubscribe correctly — toggling the
+setting or the vocabulary loading re-renders every block even though the `text` prop is
+unchanged. Command-echo lines get the same treatment; `.story-echo` is already
+bold+dim, so the highlight is visually inert there — that's fine, do not special-case
+it.)
+
+**4. CSS** (`src/App.css`) — the whole point is subtlety; this is the entire rule:
+
+```css
+/* UX-19: words the game's parser knows. Bold only — no color, no underline. */
+.tap-word-vocab {
+  font-weight: 600;
+}
+```
+
+**5. Settings UI** (`src/more/MoreScreen.tsx`): add a settings row "Highlight known
+words" with hint "Bold the words this game understands", following the exact pattern of
+the existing Debug console toggle row (label + checkbox), wired to
+`highlightVocab`/`setHighlightVocab`.
+
+**6. Docs**: dated notes in SPECS.md — §4 (the UX-15 note gains `highlightVocab` as a
+persisted field) and §5 (list `src/engine/dictionary.ts` as a pure story-file parsing
+module, alongside a one-line description of the feature and its off-switch).
+
+**7. Tests** — new `tests/dictionary.test.ts`. Build story bytes in the test with two
+small helpers (put them in the test file, not `src/`):
+
+```ts
+/** Packs lowercase-only words into dictionary z-text (A0 chars 6-31, padded with
+ *  z-char 5, top bit set on the final word). zchars per entry: 6 (v3) or 9 (v4+). */
+function encodeWord(word: string, zchars: 6 | 9): number[]; // returns 4 or 6 bytes
+
+/** Assembles a minimal story: 64-byte header (version byte at 0, dictionary address
+ *  word at 0x08, alphabet-table word at 0x34 left 0), then the dictionary table
+ *  (0 separators, given entryLength, count, entries with zero data bytes). */
+function buildStory(version: number, words: string[]): Uint8Array;
+```
+
+Cases:
+
+1. v3 story with `['lamp', 'grate', 'xyzzy', 'lantern']` → set contains `lamp`,
+   `grate`, `xyzzy`, and `lanter` (truncated at 6); `truncationLength === 6`;
+   `isVocabWord('lantern', v)` and `isVocabWord('Lamp', v)` are true;
+   `isVocabWord('lantic', v)` is false.
+2. v5 story with `['lantern']` → set contains the full `lantern`;
+   `truncationLength === 9`.
+3. Stopword/direction filtering: v3 story with `['the', 'north', 'sword']` → set is
+   exactly `{'sword'}`.
+4. Shifted characters: hand-pack one v3 entry whose z-chars are
+   `[4, 11, 20, 12, 5, 5]` (shift-A1, `f`→`F`, `o`, `g`, pad, pad — decodes to `Fog`)
+   and assert the set contains `fog` (lowercased) — this pins the one-shot shift and
+   the lowercasing.
+5. Corruption safety: version byte 1 → null; a dictionary address pointing past the end
+   of the bytes → null; an entry count of 30000 → null. None of them throw.
+6. Blorb unwrap: wrap case 1's story in `FORM` + `IFRS` with one junk chunk before the
+   `ZCOD` chunk (odd-length, to exercise the pad byte) → same result as case 1.
+
+Plus, in `tests/story-ui.test.tsx` (TapWords block): with
+`useEngineStore.setState({ vocabulary: { words: new Set(['lamp']), truncationLength: 6 } })`
+and `highlightVocab: true`, render `<TapWords text="A brass lamp sits here." />` →
+the span containing `lamp` has class `tap-word-vocab` and the one containing `brass`
+does not; with `highlightVocab: false`, no element has the class. (Both spans keep
+`tap-word` and stay tappable — assert the `lamp` tap still appends to the draft.)
+
+Acceptance: lint/tests/build pass. Live check at 390×844 against a real game (the UX-17
+sample if available): nouns like "lamp"/"building"/"keys" render bold; "the"/"you"/
+"and" do not; the More-screen toggle removes and restores the bolding live and survives
+a reload (UX-15); check the effect stays subtle in all four themes AND all three story
+fonts (serif bold in particular). If no real story file is available in the
+environment, note that the live check is pending real-device/owner verification, dated,
+in this task's entry.
+
+---
+
 ## Appendix — candidates reviewed but NOT approved for implementation
 
 Sketches for the owner's next review. **Do NOT implement anything below** — listed so
 the ideas aren't lost, with their open questions.
 
-- **Z-machine dictionary noun-awareness.** The story file header (bytes 0x08–0x09)
-  points to the game's parser dictionary; parsing it (ZSCII, words truncated to 6 chars
-  in v1–3 / 9 in v4+) yields the complete set of words the game understands, fully
-  offline, pure-bytes, vitest-able. Uses: style tap-words that are in the dictionary as
-  visibly interactive (and mute filler prose), gate long-press-examine to dictionary
-  words, and build object chips from recent prose ∩ dictionary. Open questions:
-  truncation forces prefix-matching ("lantern" → "lanter"); the dictionary mixes
-  verbs/adjectives/nouns with no part-of-speech flags usable across all games; needs a
-  spike against 2–3 real story files before speccing.
+Story-file elements evaluated 2026-07-14 (alongside promoting the dictionary parser to
+UX-19). Ranked by value; the first two are recommended for the next review round:
+
+- **Object-table short names.** The Z-machine object table (header word `0x0A`) holds
+  every in-game object's display name ("brass lantern", "small mailbox") — un-truncated
+  and multi-word, i.e. a strictly better noun source than the dictionary. Uses: tapping
+  either "brass" or "lantern" in prose could compose the full noun phrase; object chips
+  with real names. Requires decoding abbreviation-table references (header word
+  `0x18`), which UX-19 deliberately skips — a modest extension of `dictionary.ts`.
+  **Spoiler constraint (the reason this needs an owner decision):** static extraction
+  sees every object in the game, including late-game ones, so names may only ever be
+  used to *match against text already displayed*, never listed or suggested
+  proactively. Runtime "which objects are here" would need interpreter memory peeking —
+  already rejected by SPECS.md §9's status-line-over-memory-peeking decision; static
+  matching does not violate that.
+- **Blorb metadata: cover art + bibliographic data.** `.zblorb`/`.gblorb` uploads carry
+  an `IFmd` chunk (iFiction XML: real title, author, description, IFID) and often cover
+  art (`Fspc` pointing at a `PNG `/`JPEG` resource chunk). The Library currently titles
+  games by filename; this would give real titles, author bylines, and cover thumbnails
+  for blorb uploads, fully offline. UX-19's IFF chunk walker is the needed
+  substrate. Open questions: none technical — just whether Library cards should grow
+  imagery.
+- **Header identity fields.** Release number (word at `0x02`) and serial (6 ASCII bytes
+  at `0x12`) — the classic "Release 88 / Serial 840726" line. Trivial to read alongside
+  UX-19's parsing; worth showing in the Library meta line and, combined with the
+  checksum (word at `0x1C`), forms the Treaty-of-Babel-style ID that would key IFDB
+  metadata lookups if a network feature is ever wanted. Could also verify the checksum
+  on upload to catch corrupt/truncated files.
+- **Rejected — do not revisit without new information:** runtime memory peeking (room
+  contents, score internals — conflicts with SPECS.md §9's interpreter-agnostic
+  decision, and the status line already provides score); Inform grammar tables
+  (compiler-specific, undocumented, break across the very games this app targets);
+  dictionary data-byte part-of-speech flags (same reason — not standardized).
 - **Recent-objects chips.** Track nouns from the player's own successful commands
   ("take lamp" → "lamp" becomes a chip pairing with Take/Drop/Examine/Open). Zero
   false positives by construction; open question is eviction (per-room? last N?).
