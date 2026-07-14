@@ -223,6 +223,28 @@ describe('TapWords', () => {
       vi.useRealTimers();
     }
   });
+
+  it('UX-19: bolds a word in the game dictionary, not one outside it, and stays tappable', () => {
+    useEngineStore.setState({
+      vocabulary: { words: new Set(['lamp']), truncationLength: 6 },
+    });
+    useUiStore.setState({ highlightVocab: true });
+    render(<TapWords text="A brass lamp sits here." />);
+    expect(screen.getByText('lamp')).toHaveClass('tap-word-vocab');
+    expect(screen.getByText('brass')).not.toHaveClass('tap-word-vocab');
+
+    fireEvent.click(screen.getByText('lamp'));
+    expect(useUiStore.getState().commandDraft).toBe('lamp');
+  });
+
+  it('UX-19: the highlight disables when the setting is off', () => {
+    useEngineStore.setState({
+      vocabulary: { words: new Set(['lamp']), truncationLength: 6 },
+    });
+    useUiStore.setState({ highlightVocab: false });
+    render(<TapWords text="A brass lamp sits here." />);
+    expect(screen.getByText('lamp')).not.toHaveClass('tap-word-vocab');
+  });
 });
 
 describe('CommandBar', () => {

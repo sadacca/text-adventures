@@ -46,6 +46,8 @@ export function MoreScreen() {
   const setFontScale = useUiStore((s) => s.setFontScale);
   const storyFont = useUiStore((s) => s.storyFont);
   const setStoryFont = useUiStore((s) => s.setStoryFont);
+  const highlightVocab = useUiStore((s) => s.highlightVocab);
+  const setHighlightVocab = useUiStore((s) => s.setHighlightVocab);
   const installPromptEvent = useInstallStore((s) => s.promptEvent);
   const installed = useInstallStore((s) => s.installed);
   const markInstalled = useInstallStore((s) => s.markInstalled);
@@ -148,6 +150,17 @@ export function MoreScreen() {
             </button>
           </div>
         </div>
+        <label className="settings-row">
+          <span className="settings-row-label">
+            Highlight known words
+            <span className="settings-row-hint">Bold the words this game understands</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={highlightVocab}
+            onChange={(e) => setHighlightVocab(e.target.checked)}
+          />
+        </label>
         <label className="settings-row">
           <span className="settings-row-label">
             Debug console

@@ -984,6 +984,36 @@ fonts (serif bold in particular). If no real story file is available in the
 environment, note that the live check is pending real-device/owner verification, dated,
 in this task's entry.
 
+**Outcome (2026-07-14): done.** Implemented exactly as specced — `src/engine/dictionary.ts`
+(blorb unwrap, version gate, dictionary-table parsing, Z-text decoding with one-shot
+A1/A2 shifts and the ZSCII escape, custom v5+ alphabet-table support, the verbatim
+stopword list, and `isVocabWord`'s truncation-aware matching); `engineStore.vocabulary`
+set right after `gameTitle` in `openGame`, reset to `null` in `closeGame` and the
+initial reset; `uiStore.highlightVocab` (default on) joins the UX-15 persisted slice;
+`TapWords` computes `vocab = highlightVocab ? vocabulary : null` and adds
+`tap-word-vocab` conditionally without touching the UX-12 long-press logic; the
+"Highlight known words" row in `MoreScreen` follows the Debug-console checkbox pattern
+exactly. `tests/dictionary.test.ts` covers all 6 spec cases (v3 truncation, v5 no
+truncation, stopword/direction filtering, one-shot A1 shift, corruption safety
+including a version-1 file/an out-of-range dictionary address/a 30000 entry count all
+returning null without throwing, and blorb unwrap through a junk chunk exercising the
+odd-length pad byte) plus the two `TapWords` cases in `story-ui.test.tsx`. `npm run
+lint`/`npm test`/`npm run format`/`npm run build` all pass (118 tests total).
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`)
+against the real Zork I dictionary bundled by UX-17 — genuinely reading the actual
+parser dictionary Microsoft's compiler embedded in `zork1.z3`, not a stub: at West of
+House, "House", "white", "boarded", "front", "door.", "small", and "mailbox" render
+bold, while "You", "are", "standing", "in", "an", "open", "field", "west", "of", "a",
+"with", and "There"/"is"/"here." do not — a real, correct split between the game's
+actual nouns/adjectives and function words/stopwords. Toggling "Highlight known words"
+off in More removed all bolding live (0 bold words); toggling back on and reloading the
+page restored it (11 bold words, matching pre-toggle) — confirming both the live toggle
+and its UX-15 persistence. Checked font-weight (600 bold vs. 400 normal) across all 9
+theme × story-font combinations (light/dark/retro × system/serif/mono) — all pass, and
+serif screenshots specifically confirm the bold reads clearly without any color change
+in every theme, exactly the "subtle" design intent.
+
 ---
 
 ## Appendix — candidates reviewed but NOT approved for implementation

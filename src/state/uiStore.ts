@@ -12,6 +12,8 @@ export interface UiState {
   fontScale: number;
   /** UX-8: reading font for the story transcript. */
   storyFont: 'system' | 'serif' | 'mono';
+  /** UX-19: bold words the game's parser dictionary actually understands. Default on. */
+  highlightVocab: boolean;
   /** Task 1.4: settings toggle that shows/hides DebugConsole in the Story tab. */
   debugConsoleEnabled: boolean;
   /** Task 1.7: recent sent commands, newest first, for the history popover and "again". */
@@ -26,6 +28,7 @@ export interface UiState {
   setTheme: (theme: UiState['theme']) => void;
   setFontScale: (scale: number) => void;
   setStoryFont: (font: UiState['storyFont']) => void;
+  setHighlightVocab: (enabled: boolean) => void;
   setDebugConsoleEnabled: (enabled: boolean) => void;
   pushCommandHistory: (text: string) => void;
   setRoomEditTarget: (id: string | null) => void;
@@ -40,11 +43,16 @@ export interface UiState {
  */
 const persistOptions: PersistOptions<
   UiState,
-  Pick<UiState, 'theme' | 'fontScale' | 'storyFont'>
+  Pick<UiState, 'theme' | 'fontScale' | 'storyFont' | 'highlightVocab'>
 > = {
   name: 'text-adventures-settings',
   version: 1,
-  partialize: (s) => ({ theme: s.theme, fontScale: s.fontScale, storyFont: s.storyFont }),
+  partialize: (s) => ({
+    theme: s.theme,
+    fontScale: s.fontScale,
+    storyFont: s.storyFont,
+    highlightVocab: s.highlightVocab,
+  }),
 };
 
 export const useUiStore = create<UiState>()(
@@ -55,6 +63,7 @@ export const useUiStore = create<UiState>()(
       theme: 'system',
       fontScale: 1,
       storyFont: 'system',
+      highlightVocab: true,
       debugConsoleEnabled: false,
       commandHistory: [],
       roomEditTarget: null,
@@ -65,6 +74,7 @@ export const useUiStore = create<UiState>()(
       setTheme: (theme) => set({ theme }),
       setFontScale: (fontScale) => set({ fontScale }),
       setStoryFont: (storyFont) => set({ storyFont }),
+      setHighlightVocab: (highlightVocab) => set({ highlightVocab }),
       setDebugConsoleEnabled: (debugConsoleEnabled) => set({ debugConsoleEnabled }),
       pushCommandHistory: (text) =>
         set((s) => ({

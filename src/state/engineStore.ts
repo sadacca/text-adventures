@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createEngine } from '../engine/engine.js';
+import { parseVocabulary, type Vocabulary } from '../engine/dictionary.js';
 import type { RawMessage } from '../engine/protocol-tap.js';
 import type { EngineHandle, GameEvent } from '../engine/types.js';
 import {
@@ -95,6 +96,10 @@ interface EngineState {
    *  missed toast. */
   scoreDelta: { amount: number; id: number } | null;
 
+  /** UX-19: the current game's parser dictionary, parsed once on open; null if parsing
+   *  failed (corrupt/unsupported file) or no game is open. */
+  vocabulary: Vocabulary | null;
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -145,6 +150,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   traveling: false,
   pinRequestId: 0,
   scoreDelta: null,
+  vocabulary: null,
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -170,6 +176,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       saves: [],
       debugEvents: [],
       scoreDelta: null,
+      vocabulary: null,
     });
 
     const game = await getGame(gameId);
@@ -178,6 +185,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       return;
     }
     set({ gameTitle: game.title });
+    set({ vocabulary: parseVocabulary(new Uint8Array(game.bytes)) });
 
     const engine = createEngine();
     activeEngine = engine;
@@ -368,6 +376,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       debugEvents: [],
       recordingFixture: false,
       scoreDelta: null,
+      vocabulary: null,
     });
   },
 

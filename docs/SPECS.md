@@ -212,6 +212,9 @@ first paint, which an async IndexedDB read cannot. All other `uiStore` fields (`
 `commandDraft`, `commandHistory`, `debugConsoleEnabled`, `roomEditTarget`) are session
 state and are explicitly excluded via `partialize`.
 
+**2026-07-14 note (UX-19):** the persisted slice above gained a fourth field,
+`highlightVocab` (default `true`) — the "Highlight known words" settings toggle.
+
 ## 5. Component inventory (React, `src/`)
 
 | Component | File | Responsibility |
@@ -232,6 +235,12 @@ state and are explicitly excluded via `partialize`.
 State: use **zustand** (tiny, no boilerplate) with three stores: `engineStore`
 (status, current game), `mapStore` (MapGraph + actions), `uiStore` (tab, drafts,
 sheets). No Redux, no context pyramids.
+
+**2026-07-14 note (UX-19):** `src/engine/dictionary.ts` is a pure story-file parsing
+module (no WASM, no DOM) that reads the Z-machine parser dictionary directly out of the
+uploaded story bytes, so `TapWords` can bold words the game's parser actually
+understands ("you can type this") — fully offline, no LLM. Toggled off via the "Highlight
+known words" row in `MoreScreen` (`uiStore.highlightVocab`, default on).
 
 ## 6. Protocol fixtures (`tests/fixtures/`)
 

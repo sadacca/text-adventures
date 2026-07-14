@@ -214,6 +214,11 @@
   color: var(--accent-contrast);
 }
 
+/* UX-19: words the game's parser knows. Bold only — no color, no underline. */
+.tap-word-vocab {
+  font-weight: 600;
+}
+
 .verb-chips {
   display: flex;
   gap: 8px;
