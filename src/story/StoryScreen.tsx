@@ -32,7 +32,11 @@ export function StoryScreen() {
   return (
     <div className="screen story-screen">
       <h1>{gameTitle}</h1>
-      {error && <p className="error-text" role="alert">{error}</p>}
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
       {loading && <p className="loading-hint">Loading…</p>}
       {status && (
         <div className="status-line">

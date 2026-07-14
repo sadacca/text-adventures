@@ -10,13 +10,13 @@ export function AboutSection() {
       <h2>About</h2>
       <div className="settings-card about-card">
         <p className="about-blurb">
-          Text Adventures plays Z-machine story files entirely in your browser — story
-          files, saves, and maps stay on this device and are never uploaded anywhere.
+          Text Adventures plays Z-machine story files entirely in your browser — story files, saves,
+          and maps stay on this device and are never uploaded anywhere.
         </p>
         <p className="about-blurb">
-          Every story is interpreted by <strong>Bocfel</strong> (MIT license, Chris
-          Spiegel), compiled to WebAssembly. Licenses for it and every other library this
-          app is built on are below.
+          Every story is interpreted by <strong>Bocfel</strong> (MIT license, Chris Spiegel),
+          compiled to WebAssembly. Licenses for it and every other library this app is built on are
+          below.
         </p>
         {LICENSES.map((entry) => (
           <details key={entry.name} className="license-entry">

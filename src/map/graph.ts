@@ -236,9 +236,7 @@ export function moveRoom(graph: MapGraph, id: string, pos: { x: number; y: numbe
 }
 
 type Pending =
-  | { kind: 'move'; dir: Direction }
-  | { kind: 'other'; label: string }
-  | { kind: 'initial' };
+  { kind: 'move'; dir: Direction } | { kind: 'other'; label: string } | { kind: 'initial' };
 
 /**
  * Consumes a GameEvent stream and maintains a MapGraph, per SPECS.md §3's 8 rules.
@@ -329,14 +327,16 @@ export class Automapper {
         // rule 1: new confirmed edge + inferred reverse (compass moves only — a custom
         // edge label has no known opposite, so no reverse is guessed for it; see rule 4)
         upsertEdge(this.graph, from, dir, destRoom.id, 'confirmed');
-        if (compassDir) maybeAddInferredReverse(this.graph, destRoom.id, from, opposite(compassDir));
+        if (compassDir)
+          maybeAddInferredReverse(this.graph, destRoom.id, from, opposite(compassDir));
       } else if (live.status === 'inferred') {
         // rule 3: inferred edge traversed -> promote, or correct a one-way passage
         if (live.to === destRoom.id) {
           live.status = 'confirmed';
         } else {
           upsertEdge(this.graph, from, dir, destRoom.id, 'confirmed');
-          if (compassDir) maybeAddInferredReverse(this.graph, destRoom.id, from, opposite(compassDir));
+          if (compassDir)
+            maybeAddInferredReverse(this.graph, destRoom.id, from, opposite(compassDir));
         }
       } else if (live.to !== destRoom.id) {
         // rule 1's "upsert": a confirmed edge now leads somewhere else (rerouted exit)

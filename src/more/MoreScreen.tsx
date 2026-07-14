@@ -65,7 +65,11 @@ export function MoreScreen() {
               Install app
               <span className="settings-row-hint">Add to your home screen, works offline</span>
             </span>
-            <button type="button" className="tap-target btn-primary" onClick={() => void onInstall()}>
+            <button
+              type="button"
+              className="tap-target btn-primary"
+              onClick={() => void onInstall()}
+            >
               Install
             </button>
           </div>
