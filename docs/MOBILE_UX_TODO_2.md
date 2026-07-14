@@ -384,6 +384,16 @@ needed; Android Back from there still walks Story → Library → exit (the exis
 `backButton.ts` chain — verify the Library step actually happens). Note the verification
 in this task's entry, dated.
 
+**Outcome (2026-07-14): done.** Implemented exactly as specced — `src/state/autoResume.ts`
+verbatim, wired into `App.tsx` alongside the existing `attachInstallListeners`/
+`attachBackHandler` boot effects. `tests/autoResume.test.ts` covers all four cases from
+this task's spec (no games; a game with no autosave; a game with a live autosave opens
+Story; the once-per-boot guard). `npm run lint`/`npm test`/`npm run format`/
+`npm run build` all pass. No story file was bundled in the repo yet at this point in the
+batch, so the live Playwright pass (play turns → reload → lands on Story) is deferred to
+right after UX-17 lands the sample game next — see UX-17's own outcome note for that
+combined verification.
+
 ---
 
 ## Batch 2 — first-run delight and exit discovery

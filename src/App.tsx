@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useUiStore, type Tab } from './state/uiStore';
 import { attachInstallListeners } from './state/installStore';
 import { attachBackHandler } from './state/backButton';
+import { autoResumeLastGame } from './state/autoResume';
 import { LibraryScreen } from './library/LibraryScreen';
 import { StoryScreen } from './story/StoryScreen';
 import { MapScreen } from './map/MapScreen';
@@ -63,6 +64,12 @@ function App() {
   // Registered once at the top level: traps a single history entry so Android's system
   // Back always closes the topmost sheet/tab first instead of exiting the installed PWA.
   useEffect(() => attachBackHandler(), []);
+
+  // Boot path (UX-16): reopen the last-played game so an installed-PWA launch lands
+  // back in the story, not on the Library.
+  useEffect(() => {
+    void autoResumeLastGame();
+  }, []);
 
   return (
     <div className="app-shell">
