@@ -641,6 +641,19 @@ actually interact with — real nouns light up, filler prose doesn't — fully o
 pure byte-reading, no LLM. The emphasis must be **subtle** (owner decision: plain bold,
 no color change) and **toggleable in settings** (default ON).
 
+**Scope decision (2026-07-14, owner-reviewed): dictionary ONLY — object-table short
+names are deliberately excluded from this task.** The highlight is a promise that "you
+can use this word in a command", and the dictionary is the exact set of typable words
+(the parser tokenizes against it; everything else gets "I don't know the word"). Object
+short names are what the game *prints*, not what it accepts: using them would highlight
+printed-only words the parser rejects (a "Ming vase" you can only call "vase" — tap →
+failed command, a false affordance) while missing typable synonyms that appear in no
+object name ("lamp" for the object printed as "brass lantern"). Every referenceable
+object-name word is in the dictionary anyway, so merging the sets adds ~nothing. Object
+names have real value for *other* features (noun-phrase composition, object chips —
+see the appendix), as a later extension of this task's decoder. Do not add object-table
+parsing to this task.
+
 **Ordering dependency:** do this task after UX-15 (its settings toggle joins the
 persisted fields). It does not depend on UX-14/16/17/18.
 
@@ -883,16 +896,24 @@ UX-19). Ranked by value; the first two are recommended for the next review round
 
 - **Object-table short names.** The Z-machine object table (header word `0x0A`) holds
   every in-game object's display name ("brass lantern", "small mailbox") — un-truncated
-  and multi-word, i.e. a strictly better noun source than the dictionary. Uses: tapping
-  either "brass" or "lantern" in prose could compose the full noun phrase; object chips
-  with real names. Requires decoding abbreviation-table references (header word
-  `0x18`), which UX-19 deliberately skips — a modest extension of `dictionary.ts`.
-  **Spoiler constraint (the reason this needs an owner decision):** static extraction
-  sees every object in the game, including late-game ones, so names may only ever be
-  used to *match against text already displayed*, never listed or suggested
-  proactively. Runtime "which objects are here" would need interpreter memory peeking —
-  already rejected by SPECS.md §9's status-line-over-memory-peeking decision; static
-  matching does not violate that.
+  and multi-word. **Evaluated against UX-19 (2026-07-14) and kept OUT of it:** object
+  names are what the game prints, not what the parser accepts, so they are the wrong
+  source for the "you can type this" highlight — they'd add printed-only words the
+  parser rejects and miss typable synonyms, while contributing no highlightable word
+  the dictionary doesn't already have (see the scope decision in UX-19). Their real
+  uses are different features: tapping "brass" or "lantern" in prose could compose the
+  full noun phrase into the draft (safety rule if built: only compose phrases whose
+  every word is dictionary-valid, so a tap never produces a rejected command); object
+  chips with real names; later, LLM grounding ("things that exist in this game").
+  Cost is nontrivial: the object count isn't stored (the table ends by convention at
+  the lowest property-table address), short names need abbreviation-table decoding
+  (header word `0x18`), and v3/v4+ entry layouts differ — a natural *extension* of
+  UX-19's `dictionary.ts` decoder, roughly doubling it. **Spoiler constraint (the
+  reason this needs an owner decision):** static extraction sees every object in the
+  game, including late-game ones, so names may only ever be used to *match against text
+  already displayed*, never listed or suggested proactively. Runtime "which objects are
+  here" would need interpreter memory peeking — already rejected by SPECS.md §9's
+  status-line-over-memory-peeking decision; static matching does not violate that.
 - **Blorb metadata: cover art + bibliographic data.** `.zblorb`/`.gblorb` uploads carry
   an `IFmd` chunk (iFiction XML: real title, author, description, IFID) and often cover
   art (`Fspc` pointing at a `PNG `/`JPEG` resource chunk). The Library currently titles
