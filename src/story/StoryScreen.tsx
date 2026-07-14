@@ -7,6 +7,10 @@ import { ExitsRow } from './ExitsRow';
 import { VerbChips } from './VerbChips';
 import { TapWords } from './TapWords';
 import { DebugConsole } from '../debug/DebugConsole';
+import { haptic } from '../haptics';
+
+/** UX-11: how long the score toast stays up before it auto-dismisses. */
+const SCORE_TOAST_MS = 2500;
 
 /** Player is considered "pinned" to the bottom within this many px of scrollHeight. */
 const PIN_THRESHOLD = 100;
@@ -18,11 +22,24 @@ export function StoryScreen() {
   const transcript = useEngineStore((s) => s.transcript);
   const status = useEngineStore((s) => s.status);
   const pinRequestId = useEngineStore((s) => s.pinRequestId);
+  const scoreDelta = useEngineStore((s) => s.scoreDelta);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const [newBelow, setNewBelow] = useState(false);
+
+  // UX-11: toast a score increase, then auto-dismiss. Keyed on the whole scoreDelta
+  // object, so a new delta (even an equal amount) cancels any pending dismiss and
+  // restarts the timer/haptic instead of being swallowed by the old one.
+  useEffect(() => {
+    if (!scoreDelta) return;
+    haptic([20, 40, 20]);
+    const timer = setTimeout(() => {
+      useEngineStore.setState({ scoreDelta: null });
+    }, SCORE_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [scoreDelta]);
 
   // Smart scroll pinning: only auto-scroll to the newest text when the player was
   // already at (or near) the bottom. Otherwise they're reading back, so surface a pill
@@ -100,6 +117,11 @@ export function StoryScreen() {
             <TapWords key={i} text={chunk} />
           ))}
         </div>
+        {scoreDelta && (
+          <div key={scoreDelta.id} className="score-toast" aria-live="polite">
+            +{scoreDelta.amount}
+          </div>
+        )}
         {newBelow && (
           <button type="button" className="new-text-pill tap-target" onClick={scrollToBottom}>
             ↓ New text
