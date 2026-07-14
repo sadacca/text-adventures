@@ -24,6 +24,15 @@ function App() {
     const root = document.documentElement;
     if (theme === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', theme);
+
+    const isDark =
+      theme === 'dark' ||
+      (theme === 'system' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', isDark ? '#14161a' : '#f5f5f7');
   }, [theme]);
 
   useEffect(() => {

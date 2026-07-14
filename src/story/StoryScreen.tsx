@@ -8,7 +8,6 @@ import { DebugConsole } from '../debug/DebugConsole';
 
 export function StoryScreen() {
   const gameId = useEngineStore((s) => s.gameId);
-  const gameTitle = useEngineStore((s) => s.gameTitle);
   const loading = useEngineStore((s) => s.loading);
   const error = useEngineStore((s) => s.error);
   const transcript = useEngineStore((s) => s.transcript);
@@ -31,7 +30,6 @@ export function StoryScreen() {
 
   return (
     <div className="screen story-screen">
-      <h1>{gameTitle}</h1>
       {error && (
         <p className="error-text" role="alert">
           {error}
