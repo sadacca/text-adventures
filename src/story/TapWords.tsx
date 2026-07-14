@@ -9,12 +9,11 @@ function cleanWord(token: string): string {
 /**
  * Task 1.7 "tap-a-word": wraps the story transcript and makes every word tappable —
  * tapping appends the cleaned word to the command draft (e.g. tap "examine" chip, tap
- * "lantern" in the text, send). Whitespace runs are preserved verbatim so the visible
- * text is unchanged.
+ * "lantern" in the text, send) without opening the keyboard. Whitespace runs are
+ * preserved verbatim so the visible text is unchanged.
  */
 export function TapWords({ text }: { text: string }) {
   const appendToDraft = useUiStore((s) => s.appendToDraft);
-  const requestInputFocus = useUiStore((s) => s.requestInputFocus);
   const ref = useRef<HTMLPreElement>(null);
 
   // Pin scroll to the newest text on every update — otherwise a long session leaves the
@@ -39,7 +38,6 @@ export function TapWords({ text }: { text: string }) {
             className="tap-word"
             onClick={() => {
               appendToDraft(word.toLowerCase());
-              requestInputFocus();
             }}
           >
             {token}

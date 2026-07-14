@@ -1,8 +1,8 @@
 /**
  * Task 1.7 verb chip config. `needsObject: false` verbs send immediately on tap (they're
  * complete commands on their own); `needsObject: true` verbs insert the verb + a
- * trailing space into the draft and request input focus, so the next tap (a chip or a
- * tapped word from the story text) supplies the object.
+ * trailing space into the draft (without opening the keyboard), so the next tap (a chip
+ * or a tapped word from the story text) supplies the object.
  */
 export interface VerbConfig {
   label: string;

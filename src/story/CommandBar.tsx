@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import { useUiStore } from '../state/uiStore';
 import { useKeyboardInset } from './useKeyboardInset';
@@ -19,7 +19,6 @@ export function CommandBar() {
   const sendCommand = useEngineStore((s) => s.sendCommand);
   const draft = useUiStore((s) => s.commandDraft);
   const setDraft = useUiStore((s) => s.setCommandDraft);
-  const focusRequestId = useUiStore((s) => s.focusRequestId);
   const commandHistory = useUiStore((s) => s.commandHistory);
   const pushCommandHistory = useUiStore((s) => s.pushCommandHistory);
 
@@ -27,10 +26,6 @@ export function CommandBar() {
   const inputRef = useRef<HTMLInputElement>(null);
   const touchStartY = useRef<number | null>(null);
   const inset = useKeyboardInset();
-
-  useEffect(() => {
-    if (focusRequestId > 0) inputRef.current?.focus();
-  }, [focusRequestId]);
 
   function submit() {
     const text = draft.trim();

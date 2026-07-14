@@ -35,14 +35,13 @@ describe('VerbChips', () => {
     expect(sendCommand).toHaveBeenCalledWith('look');
   });
 
-  it('inserts object verbs into the draft and requests focus instead of sending', () => {
+  it('inserts object verbs into the draft instead of sending', () => {
     const sendCommand = vi.fn();
     useEngineStore.setState({ inputType: 'line', sendCommand });
     render(<VerbChips />);
     fireEvent.click(screen.getByText('Take'));
     expect(sendCommand).not.toHaveBeenCalled();
     expect(useUiStore.getState().commandDraft).toBe('take');
-    expect(useUiStore.getState().focusRequestId).toBe(1);
   });
 
   it('disables all chips when the game is not awaiting line input', () => {
@@ -79,11 +78,10 @@ describe('CompassRose', () => {
 });
 
 describe('TapWords', () => {
-  it('appends a tapped word to the draft and requests focus', () => {
+  it('appends a tapped word to the draft', () => {
     render(<TapWords text="There is a brass lamp here." />);
     fireEvent.click(screen.getByText('lamp'));
     expect(useUiStore.getState().commandDraft).toBe('lamp');
-    expect(useUiStore.getState().focusRequestId).toBe(1);
   });
 
   it('composes a full command across a verb chip and a tapped word', () => {
@@ -98,6 +96,7 @@ describe('TapWords', () => {
     fireEvent.click(screen.getByText('Take'));
     fireEvent.click(screen.getByText('lamp'));
     expect(useUiStore.getState().commandDraft).toBe('take lamp');
+    expect(document.activeElement?.tagName).not.toBe('INPUT');
   });
 });
 
