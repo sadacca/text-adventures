@@ -111,12 +111,48 @@ describe('rule 3: inferred edges', () => {
   });
 });
 
-describe('rule 4: non-movement room changes (teleport)', () => {
-  it('places an unconnected, teleport-flagged room with no edge', () => {
+describe('rule 4: non-compass commands that change the room', () => {
+  it('links a known origin to the destination using the raw command text as the edge label', () => {
     const am = new Automapper();
-    am.handleEvent(status('Kitchen', 0));
-    am.handleEvent(cmd('wave wand', 1));
-    am.handleEvent(status('Wizard Tower', 1));
+    am.handleEvent(status('Garden', 0));
+    am.handleEvent(cmd('climb ladder', 1));
+    am.handleEvent(status('Tower Roof', 1));
+
+    const g = am.graph;
+    expect(g.currentRoomId).toBe('tower-roof');
+    expect(g.rooms['tower-roof'].flags.teleportTarget).toBeUndefined();
+    expect(g.edges).toContainEqual({
+      from: 'garden',
+      to: 'tower-roof',
+      dir: 'climb ladder',
+      status: 'confirmed',
+    });
+    // No opposite is known for a custom edge, so no reverse is guessed (unlike rule 1).
+    expect(g.edges).toHaveLength(1);
+  });
+
+  it('records a link back once the reverse command is actually traversed', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Garden', 0));
+    am.handleEvent(cmd('climb ladder', 1));
+    am.handleEvent(status('Tower Roof', 1));
+
+    am.handleEvent(cmd('climb down ladder', 2));
+    am.handleEvent(status('Garden', 2));
+
+    expect(am.graph.edges).toContainEqual({
+      from: 'tower-roof',
+      to: 'garden',
+      dir: 'climb down ladder',
+      status: 'confirmed',
+    });
+    expect(am.graph.edges).toHaveLength(2);
+  });
+
+  it('places a genuine teleport (no known origin room yet) unconnected and flagged', () => {
+    const am = new Automapper();
+    am.handleEvent(cmd('wave wand', 0)); // no room known yet -> nothing to link from
+    am.handleEvent(status('Wizard Tower', 0));
 
     const g = am.graph;
     expect(g.currentRoomId).toBe('wizard-tower');

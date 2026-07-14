@@ -116,8 +116,15 @@ first; anything wider just gets more breathing room.
 
 ### 1.7 Licensing and content rules
 
-- App code MIT. AsyncGlk/emglken/Parchment MIT; **Bocfel is GPL-2.0** — we use it as an
-  unmodified prebuilt binary component; do not copy its source into this repo.
+- App code MIT. AsyncGlk/emglken/Parchment MIT. **Correction (2026-07-13, Task 1.9):**
+  this line originally said "Bocfel is GPL-2.0" — checked against Bocfel's actual
+  upstream LICENSE (`garglk/garglk`'s `terps/bocfel/LICENSE`, the fork emglken vendors)
+  and it's **MIT** (Chris Spiegel), not GPL-2.0. GPL-2.0 interpreters do exist inside
+  emglken's npm bundle (Scare, TADS — hence the *package's* own `license` field saying
+  GPL-2.0), but this app only ships `bocfel.wasm`, which is MIT. Still consumed as an
+  unmodified prebuilt binary component either way; do not copy its source into this
+  repo. See SPECS.md Task 1.9's outcome note and `src/more/licenses.ts` for the
+  corrected, verified attribution.
 - **Never commit Infocom story files.** Add `*.z1`–`*.z8`, `*.dat`, `*.zblorb` to
   `.gitignore`. Users load their own files. For dev/tests, download freely
   redistributable games at build/test time (e.g. `advent.z5` — public-domain Adventure;
@@ -623,6 +630,43 @@ everything including WASM (fully offline after first load), install prompt flow.
 Acceptance: Lighthouse PWA installable check passes; airplane-mode reload on a real
 Android phone works; full session (play, map, autosave-resume) verified on the device.
 
+### Task 1.10 — Suggested exits from room text (future, not yet scheduled)
+**Owner idea (2026-07-13), design sketch only — no code written for this yet.** The
+automapper (§3's 8 rules) only ever records an edge once the player actually tries a
+direction and the room changes. But room description text often *mentions* an exit the
+player hasn't tried yet ("there is a passage to the west", "a door leads north") — or
+mentions one they went a different way from (description says west, player went
+south). Surfacing those as unconfirmed suggestions would help players notice exits
+they've overlooked.
+
+Sketch, for whoever picks this up:
+- **Detection**: scan `buffer_text` for the same direction words `directions.ts`'s
+  `ALIASES` already recognizes (word-boundary match, not substring — "westward" ≠
+  "west" as a real exit mention), scoped to text seen while occupying a given room (not
+  just its `firstDescription`, since re-`look`ing can surface exits the initial arrival
+  text didn't). Store the accumulated set as a new optional `RoomNode` field, e.g.
+  `mentionedDirections?: Direction[]` (serializes for free alongside the rest of the
+  graph).
+- **Diffing**: a mentioned direction is only worth surfacing if it's *not* already a
+  confirmed (or inferred) edge from that room — otherwise every already-mapped exit
+  would also "light up" as a suggestion, which is noise, not signal.
+- **UI**: on the map, a short faint stub at that direction's `gridOffset` (or, for a
+  direction with no known destination, just a marker with no line/target room) —
+  visually distinct from both a confirmed edge and a rule-4 custom edge, since it's a
+  *guess*, not an observation. Could also lightly highlight the relevant `CompassRose`
+  button with a third visual state (known / suggested / neither).
+- **Known false-positive/negative risk — the reason this isn't built yet**: natural-
+  language room descriptions vary enormously across games; direction words appear in
+  flavor text unrelated to exits ("a chilly northern wind"), in negations ("no exit to
+  the west"), or exits are described without any direction word at all ("a door", "an
+  archway"). This feature is inherently a soft suggestion, not a fact, and needs a UI
+  treatment that makes that clear (e.g. never auto-adds a real edge, never contributes
+  to tap-to-travel's BFS) — worth spiking against a couple of real games' prose before
+  committing to a detection heuristic.
+- The detection/diffing logic itself is pure functions over strings and `MapGraph` (no
+  live engine needed), so — like the rest of the automapper — it's a good fit for
+  vitest coverage from the start, same pattern as `tests/graph.test.ts`.
+
 ---
 
 ## 4. Phase 2 — LLM assistance (bring-your-own-token)
@@ -703,7 +747,7 @@ Acceptance: sideloaded APK plays a game, saves, maps, and restores fully offline
 | Status-line room name unreliable in some games (v5+ custom status, v6) | Manual "mark room" button; disambiguation rules in Task 1.6; memory-peeking enhancement later |
 | Autosave unachievable in our own wiring (gating — §1.6) | Task 1.3 proves it in a spike before further engine work; Parchment-iframe fallback inherits Parchment's own autosave |
 | Mobile soft-keyboard quirks (viewport jumps, autocorrect, focus loss) | Task 1.7 addresses directly (`visualViewport`, input attributes); command-assist UI reduces typing to near zero; test on real Android Chrome each phase |
-| Bocfel GPL-2.0 | Consume unmodified prebuilt WASM; keep app code separate; attribute in About screen |
+| Bocfel is MIT, not GPL-2.0 as originally assumed here (corrected 2026-07-13 — §1.7) | Consume unmodified prebuilt WASM; keep app code separate; attribute in About screen |
 | Copyright of Infocom games | Never bundle; user-supplied files only; test with free games |
 | LLM hints hallucinate puzzle solutions | Honesty instructions + optional user-supplied walkthrough grounding |
 

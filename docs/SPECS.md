@@ -81,7 +81,9 @@ export interface RoomNode {
 export interface RoomEdge {
   from: string;            // RoomNode.id
   to: string;
-  dir: Direction;
+  dir: Direction | string; // compass word, OR (rule 4, revised 2026-07-13) the raw
+                           // command text for a non-compass move that still changed
+                           // rooms — see rule 4 below.
   status: 'confirmed' | 'inferred';  // inferred = auto-added reverse edge
   userDeleted?: boolean;   // tombstone: automapper must never re-add this edge
 }
@@ -133,8 +135,24 @@ Given the `GameEvent` stream, on each `status_line` following a `command`:
 3. **Inferred edge later traversed** → promote to `confirmed`; if traversal lands in a
    DIFFERENT room than the inferred edge claimed (one-way passage), delete the inferred
    edge and create a confirmed edge to the actual destination.
-4. **Non-movement command + room changed** → teleport rule: room created/found with no
+4. **Non-compass command + room changed** (revised 2026-07-13 — see note below):
+   if there's a known origin room (`currentRoomId` is a real, non-`unknown` room), this
+   is a real, repeatable connection — "climb ladder", "go around house", "enter
+   window" — not a one-off teleport, so link it: upsert edge `(from, dir) → to` as
+   `confirmed`, where `dir` is the exact raw command text (not a compass word). Unlike
+   rule 1, **no inferred reverse edge is added** — a custom edge label has no known
+   opposite, so a link back only appears once the reverse command is actually traversed
+   (at which point it's just a fresh rule-1-style upsert with its own label). True
+   teleport rule (unchanged): if there's *no* known origin room (the very first room of
+   the game, or leaving the shared `(unknown)` singleton) → room created/found with no
    edge, flagged `teleportTarget`; `currentRoomId` updated.
+   **2026-07-13 note:** originally this rule always dropped the edge and only flagged
+   `teleportTarget` — real non-cardinal exits (ladders, windows, "go around the house")
+   were indistinguishable from genuine one-off teleports (a spell, being dragged
+   somewhere) by command text alone, so they were losing connectivity on the map. Owner
+   decision: prefer linking (the common case) over correctly excluding the rare true
+   teleport; a spuriously-linked one-off can still be removed via the existing
+   long-press "delete" edge action.
 5. **Status line has no recognizable room name** (dark room, custom status) → current
    room becomes the shared `(unknown)` node (id `unknown`), no edges recorded until a
    real room name reappears.
@@ -272,6 +290,13 @@ round-trip ☑ debounced (500 ms) persistence (`src/state/mapStore.ts`).
 (2026-07-13: implemented directly, skipping ahead of 1.4/1.7 per owner request — see
 IMPLEMENTATION_PLAN.md outcome notes. `src/map/graph.ts`, `directions.ts`, `travel.ts`;
 storage in `src/storage/maps.ts`.)
+(2026-07-13, later same day: rule 4 revised per owner feedback from real play — see the
+rule 4 note in §3 above. `RoomEdge.dir` widened to `Direction | string`;
+`directions.ts` grew `isCompassDirection()` so `layout.ts`/`travel.ts`/`CompassRose.tsx`/
+`MapScreen.tsx` can tell a compass edge from a custom one. `MapScreen.tsx` draws custom
+edges with a distinct dotted style and a text label (the command used); `CompassRose`'s
+"known exits" highlight only ever considers compass edges, since there's no compass
+button for a custom command.)
 
 **1.7 Command input** ☑ no-typing traversal test passes (verb chip + tap-word compose
 "take lamp" and it's actually taken — Playwright, 390×844) ☑ keyboard stays open across
@@ -302,9 +327,79 @@ Playwright pass).
 Not verified this session (needs a real device / multi-touch harness — see PLAN outcome
 notes): two-finger pinch-zoom and the >8-move long-trip confirm dialog.
 
-**1.9 Polish/offline** ☐ install prompt on Android Chrome via Pages URL ☐ airplane-mode
-reload works ☐ font-size control ☐ dark/light ☐ licenses screen (incl. Bocfel GPL-2.0
-attribution) ☐ full on-device session verified.
+**1.9 Polish/offline** ☑ font-size control ☑ dark/light ☑ install prompt ☑ airplane-mode
+reload works (simulated) ☑ licenses screen ☐ full on-device session verified (the one
+item that genuinely needs real hardware — see note below).
+(2026-07-13: first slice only — a "beautification" pass, owner-scoped to exclude
+install-prompt/licenses/offline-device-verification for now. Theme (`uiStore.theme`)
+and `fontScale` already had store plumbing and a `data-theme`/root-`font-size` effect in
+`App.tsx` from scaffolding, but no UI exposed either — added a settings card in
+`MoreScreen.tsx` (segmented Light/Dark/System control + an A−/A+ stepper, 85%-140% in
+10% steps) and verified both live via Playwright, including that "Dark"/"Light"
+correctly override the OS color-scheme rather than just following it. Also added a
+shared design-token layer (`index.css`: spacing/radius/shadow custom properties) and a
+global `button` reset (native chrome was fighting the existing per-component CSS),
+`.btn-primary`/`.btn-danger` variants, and a shared `.empty-state` treatment (icon +
+centered text, `flex:1` within the now-flex-column `.screen`) applied across
+Library/Story/Map/More's "nothing here yet" states.
+**Two real bugs found and fixed along the way, not just cosmetics:** (1) the story
+transcript never auto-scrolled — `TapWords.tsx`'s `<pre>` had no ref/effect at all, so a
+long session left the player looking at whatever text was on screen when they last
+manually scrolled, unaware there was new output below; fixed with a `scrollTop =
+scrollHeight` effect keyed on the transcript text. (2) `engineStore.ts`'s
+`stripHistoryReplay`'s blank-line collapse (`\n{3,} -> \n\n`) only ever ran on the
+branch that found Bocfel's history-playback markers — ordinary turns, including
+Adventure's own opening banner (which pads itself with six leading blank lines for a
+full-height terminal), passed through untouched, showing as a large dead gap above the
+first real text in our scrolling view. Replaced with a `normalizeResponse()` helper
+applied to every turn's response: same 3+-blank-line collapse, plus a leading-blank-line
+trim gated on `get().transcript.length === 0` (only the transcript's very first chunk,
+so normal inter-turn spacing elsewhere is untouched).
+Verified via Playwright against a real `advent.z5` session (light + dark + forced
+theme override + increased font scale), plus `npm run lint`/`npm test`/`npm run build`.)
+(2026-07-13, second slice: licenses screen, install prompt, and offline verification.)
+
+- **Licenses/about screen** (`src/more/AboutSection.tsx`, `src/more/licenses.ts`):
+  rendered in `MoreScreen` below Saves, one native `<details>` per dependency (name,
+  license badge, role, full license text) — no extra JS/state needed for the
+  expand/collapse. **Correction to this doc's own prior wording**: SPECS.md and
+  IMPLEMENTATION_PLAN.md both said "Bocfel GPL-2.0" — checked the actual upstream
+  license (`garglk/garglk`'s `terps/bocfel/LICENSE`, the fork emglken vendors) and it's
+  **MIT** (Chris Spiegel), not GPL-2.0. GPL-2.0 code does exist inside emglken's own npm
+  bundle (Scare, TADS) — which is why the *package's* `license` field says GPL-2.0 — but
+  those interpreters aren't the one this app ships (`bocfel.wasm` only). The licenses
+  screen states the correct MIT attribution; treat any earlier "GPL-2.0" mention in
+  these docs as superseded by this note.
+- **Install prompt** (`src/state/installStore.ts`, wired from `App.tsx`, UI in
+  `MoreScreen.tsx`): captures and defers `beforeinstallprompt` (Chrome only fires it
+  once per load) behind a settings-card row with an "Install" button; `appinstalled`
+  and an initial `display-mode: standalone` check hide the row once actually installed.
+  **Verified against the production build** (`vite preview`) with Playwright + a
+  *non-incognito* persistent Chrome profile (an ephemeral/incognito context — Playwright's
+  default — makes Chrome refuse to fire the event at all, which cost some time to
+  diagnose): Chrome's own `Page.getInstallabilityErrors` CDP check returns zero errors,
+  `beforeinstallprompt` genuinely fires, our button appears and calls `.prompt()`
+  without error. **Lighthouse's PWA category no longer exists** (removed entirely by
+  Lighthouse 13, the version available here) — `Page.getInstallabilityErrors` is the
+  modern equivalent and is what was actually used to satisfy this acceptance check.
+- **Offline verification**: `context.setOffline(true)` in Playwright against the
+  production build (not a real device — the honest substitute available here) —
+  confirmed (a) a full reload with zero network serves the app shell from the
+  workbox precache (12 entries, both the hashed and unhashed `bocfel.wasm` among them)
+  rather than a browser offline error page, (b) tab navigation works fully offline, and
+  (c) — the acceptance bar that actually matters — uploading and **playing `advent.z5`
+  start-to-finish while fully offline works**, proving the WASM interpreter itself
+  loads from cache correctly, not just the shell (this is exactly the class of bug
+  Task 1.3's deploy gotcha in §7 was about, so it was worth re-checking specifically,
+  not just assuming the earlier fix still holds).
+- **One real bug caught by this pass's own test run**: `installStore.ts`'s module-level
+  `runningStandalone()` called `window.matchMedia` unconditionally, which crashed
+  `src/App.test.tsx` under jsdom (no `matchMedia` there) the moment anything imported
+  `App.tsx` — guarded behind a `typeof window.matchMedia === 'function'` check.
+- **Still open, and genuinely needs real hardware** (not simulable here): the actual
+  on-device install banner/home-screen icon on Android Chrome, a real airplane-mode
+  reload on a phone, and Task 1.7/1.8's own still-open real-device items (soft-keyboard
+  inset, two-finger pinch-zoom, long-trip confirm dialog).
 
 ## 9. Known judgment calls already made (do not re-litigate)
 
@@ -315,3 +410,7 @@ attribution) ☐ full on-device session verified.
 - GitHub Pages primary hosting; LAN serving is best-effort undocumented.
 - Turn counter increments on `command` events only.
 - `(unknown)` is a single shared node, not one per dark encounter.
+- Suggested-but-unconfirmed exits (parsing "there is a passage to the west" out of room
+  text and showing it before the player tries it) is a deliberately deferred idea, not
+  an oversight — design sketch in `IMPLEMENTATION_PLAN.md` Task 1.10. Not built because
+  the detection heuristic needs validating against real games' prose first.

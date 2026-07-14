@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useUiStore, type Tab } from './state/uiStore';
+import { attachInstallListeners } from './state/installStore';
 import { LibraryScreen } from './library/LibraryScreen';
 import { StoryScreen } from './story/StoryScreen';
 import { MapScreen } from './map/MapScreen';
@@ -28,6 +29,10 @@ function App() {
   useEffect(() => {
     document.documentElement.style.fontSize = `${16 * fontScale}px`;
   }, [fontScale]);
+
+  // Registered once at the top level: beforeinstallprompt can fire before any
+  // particular tab is mounted, and Chrome only ever dispatches it once per load.
+  useEffect(() => attachInstallListeners(), []);
 
   return (
     <div className="app-shell">

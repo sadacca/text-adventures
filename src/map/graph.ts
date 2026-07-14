@@ -1,5 +1,5 @@
 import type { GameEvent } from '../engine/types.js';
-import { normalizeDirection, opposite } from './directions.js';
+import { isCompassDirection, normalizeDirection, opposite } from './directions.js';
 
 export type Direction =
   'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | 'up' | 'down' | 'in' | 'out';
@@ -17,7 +17,12 @@ export interface RoomNode {
 export interface RoomEdge {
   from: string; // RoomNode.id
   to: string;
-  dir: Direction;
+  // One of the 12 compass words, OR (rule 4, revised) the exact raw command text used
+  // for a non-compass move that still changed rooms (e.g. "climb ladder", "go around
+  // house", "enter window") — `isCompassDirection()` tells the two apart. Custom edges
+  // have no `opposite`, so no inferred reverse is auto-added for them (see rule 4 notes
+  // in SPECS.md): a link back only appears once actually traversed the other way.
+  dir: Direction | string;
   status: 'confirmed' | 'inferred'; // inferred = auto-added reverse edge
   userDeleted?: boolean; // tombstone: automapper must never re-add this edge
 }
@@ -113,11 +118,11 @@ function resolveRoomOnArrival(
   return createRoom(graph, name, candidates.length);
 }
 
-function liveEdgeAt(graph: MapGraph, from: string, dir: Direction): RoomEdge | undefined {
+function liveEdgeAt(graph: MapGraph, from: string, dir: Direction | string): RoomEdge | undefined {
   return graph.edges.find((e) => e.from === from && e.dir === dir && !e.userDeleted);
 }
 
-function isTombstoned(graph: MapGraph, from: string, dir: Direction): boolean {
+function isTombstoned(graph: MapGraph, from: string, dir: Direction | string): boolean {
   return graph.edges.some((e) => e.from === from && e.dir === dir && e.userDeleted);
 }
 
@@ -125,7 +130,7 @@ function isTombstoned(graph: MapGraph, from: string, dir: Direction): boolean {
 function upsertEdge(
   graph: MapGraph,
   from: string,
-  dir: Direction,
+  dir: Direction | string,
   to: string,
   status: RoomEdge['status'],
 ): void {
@@ -230,7 +235,10 @@ export function moveRoom(graph: MapGraph, id: string, pos: { x: number; y: numbe
   room.posLocked = true;
 }
 
-type Pending = { kind: 'move'; dir: Direction } | { kind: 'other' } | { kind: 'initial' };
+type Pending =
+  | { kind: 'move'; dir: Direction }
+  | { kind: 'other'; label: string }
+  | { kind: 'initial' };
 
 /**
  * Consumes a GameEvent stream and maintains a MapGraph, per SPECS.md §3's 8 rules.
@@ -243,13 +251,13 @@ export class Automapper {
 
   constructor(graph: MapGraph = createEmptyGraph()) {
     this.graph = graph;
-    this.pending = graph.currentRoomId ? { kind: 'other' } : { kind: 'initial' };
+    this.pending = graph.currentRoomId ? { kind: 'other', label: '' } : { kind: 'initial' };
   }
 
   handleEvent(event: GameEvent): void {
     if (event.kind === 'command') {
       const dir = normalizeDirection(event.text);
-      this.pending = dir ? { kind: 'move', dir } : { kind: 'other' };
+      this.pending = dir ? { kind: 'move', dir } : { kind: 'other', label: event.text.trim() };
       return;
     }
     if (event.kind === 'status_line') this.handleStatusLine(event.left);
@@ -257,7 +265,7 @@ export class Automapper {
 
   private handleStatusLine(rawLeft: string): void {
     const pending = this.pending;
-    this.pending = { kind: 'other' };
+    this.pending = { kind: 'other', label: '' };
 
     const normalized = normalizeRoomName(rawLeft);
     const isUnknown = normalized.length === 0;
@@ -292,31 +300,43 @@ export class Automapper {
       return;
     }
 
-    // rule 4 (teleport / non-movement room change) and initial game-start bootstrap
+    if (pending.kind === 'other' && currentId != null && currentId !== UNKNOWN_ROOM_ID) {
+      // rule 4 (revised): a non-compass command that still changed the room is a real,
+      // repeatable connection — "climb ladder", "go around house", "enter window" — so
+      // link it using the actual command text as the edge label, rather than dropping
+      // it as an unconnected teleport. Only a command with nothing to link *from* (the
+      // very first room of the game, or leaving the shared unknown/dark singleton,
+      // handled below) has no edge to record.
+      this.handleMovement(currentId, pending.label, normalized);
+      return;
+    }
+
+    // true teleport bootstrap: no origin at all to hang an edge off of
     const room = resolveRoomOnArrival(this.graph, null, null, normalized);
     if (pending.kind === 'other') room.flags.teleportTarget = true;
     this.graph.currentRoomId = room.id;
   }
 
-  private handleMovement(fromId: string | null, dir: Direction, destName: string): void {
+  private handleMovement(fromId: string | null, dir: Direction | string, destName: string): void {
     // No origin to hang an edge off of (unknown room, or move before any room is known).
     const from = fromId === UNKNOWN_ROOM_ID ? null : fromId;
-    const destRoom = resolveRoomOnArrival(this.graph, from, dir, destName);
+    const compassDir = isCompassDirection(dir) ? dir : null;
+    const destRoom = resolveRoomOnArrival(this.graph, from, compassDir, destName);
 
     if (from != null) {
-      const oppDir = opposite(dir);
       const live = liveEdgeAt(this.graph, from, dir);
       if (!live) {
-        // rule 1: new confirmed edge + inferred reverse
+        // rule 1: new confirmed edge + inferred reverse (compass moves only — a custom
+        // edge label has no known opposite, so no reverse is guessed for it; see rule 4)
         upsertEdge(this.graph, from, dir, destRoom.id, 'confirmed');
-        maybeAddInferredReverse(this.graph, destRoom.id, from, oppDir);
+        if (compassDir) maybeAddInferredReverse(this.graph, destRoom.id, from, opposite(compassDir));
       } else if (live.status === 'inferred') {
         // rule 3: inferred edge traversed -> promote, or correct a one-way passage
         if (live.to === destRoom.id) {
           live.status = 'confirmed';
         } else {
           upsertEdge(this.graph, from, dir, destRoom.id, 'confirmed');
-          maybeAddInferredReverse(this.graph, destRoom.id, from, oppDir);
+          if (compassDir) maybeAddInferredReverse(this.graph, destRoom.id, from, opposite(compassDir));
         }
       } else if (live.to !== destRoom.id) {
         // rule 1's "upsert": a confirmed edge now leads somewhere else (rerouted exit)

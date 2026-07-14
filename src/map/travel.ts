@@ -1,7 +1,9 @@
 import type { Direction, MapGraph } from './graph.js';
 
 export interface TravelStep {
-  dir: Direction;
+  // Sent verbatim to the engine (`sendCommand(step.dir)`) — either a compass word or,
+  // for a custom edge (rule 4), the exact raw command text that was used to record it.
+  dir: Direction | string;
   roomId: string; // room reached after taking this step
 }
 
@@ -14,7 +16,7 @@ export function computePath(graph: MapGraph, fromId: string, toId: string): Trav
   if (fromId === toId) return [];
   if (!graph.rooms[fromId] || !graph.rooms[toId]) return null;
 
-  const cameFrom = new Map<string, { via: Direction; from: string }>();
+  const cameFrom = new Map<string, { via: Direction | string; from: string }>();
   const visited = new Set<string>([fromId]);
   const queue: string[] = [fromId];
 
@@ -33,7 +35,7 @@ export function computePath(graph: MapGraph, fromId: string, toId: string): Trav
 }
 
 function reconstructPath(
-  cameFrom: Map<string, { via: Direction; from: string }>,
+  cameFrom: Map<string, { via: Direction | string; from: string }>,
   toId: string,
 ): TravelStep[] {
   const steps: TravelStep[] = [];

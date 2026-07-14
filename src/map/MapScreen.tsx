@@ -3,6 +3,7 @@ import { useEngineStore } from '../state/engineStore';
 import { useMapStore } from '../state/mapStore';
 import { computePath, isLongTrip } from './travel';
 import type { MapGraph, RoomEdge, RoomNode } from './graph';
+import { isCompassDirection, isStubDirection } from './directions';
 import { RoomEditSheet } from './RoomEditSheet';
 
 const UNIT = 110; // px per grid cell
@@ -21,6 +22,13 @@ interface Segment {
   x2: number;
   y2: number;
   dashed: boolean;
+  // True only for a rule-4 custom edge (e.g. "climb ladder") — no compass glyph
+  // applies, so the map draws it distinctly (dotted, accent-colored).
+  custom: boolean;
+  // Shown for custom edges (the command text) and for up/down/in/out (real compass
+  // edges, but rendered as short stubs whose direction isn't obvious from geometry
+  // alone — see isStubDirection).
+  label?: string;
 }
 
 interface ViewBox {
@@ -47,6 +55,7 @@ function buildSegments(graph: MapGraph): Segment[] {
   return [...byPair.entries()].map(([key, edge]) => {
     const a = graph.rooms[edge.from];
     const b = graph.rooms[edge.to];
+    const custom = !isCompassDirection(edge.dir);
     return {
       key,
       x1: a.pos.x * UNIT,
@@ -54,6 +63,8 @@ function buildSegments(graph: MapGraph): Segment[] {
       x2: b.pos.x * UNIT,
       y2: b.pos.y * UNIT,
       dashed: edge.status === 'inferred',
+      custom,
+      label: custom || isStubDirection(edge.dir) ? edge.dir : undefined,
     };
   });
 }
@@ -271,7 +282,12 @@ export function MapScreen() {
     return (
       <div className="screen">
         <h1>Map</h1>
-        <p>No game loaded. Pick one from the Library tab.</p>
+        <div className="empty-state">
+          <span className="empty-state-icon" aria-hidden="true">
+            🗺️
+          </span>
+          <p>No game loaded. Pick one from the Library tab.</p>
+        </div>
       </div>
     );
   }
@@ -280,7 +296,12 @@ export function MapScreen() {
     return (
       <div className="screen">
         <h1>Map</h1>
-        <p>The map fills in automatically as you explore.</p>
+        <div className="empty-state">
+          <span className="empty-state-icon" aria-hidden="true">
+            🧭
+          </span>
+          <p>The map fills in automatically as you explore.</p>
+        </div>
       </div>
     );
   }
@@ -309,15 +330,27 @@ export function MapScreen() {
       >
         <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
           {segments.map((seg) => (
-            <line
-              key={seg.key}
-              className="map-edge"
-              x1={seg.x1}
-              y1={seg.y1}
-              x2={seg.x2}
-              y2={seg.y2}
-              strokeDasharray={seg.dashed ? '6 5' : undefined}
-            />
+            <g key={seg.key}>
+              <line
+                className={seg.custom ? 'map-edge map-edge-custom' : 'map-edge'}
+                x1={seg.x1}
+                y1={seg.y1}
+                x2={seg.x2}
+                y2={seg.y2}
+                strokeDasharray={seg.custom ? '2 4' : seg.dashed ? '6 5' : undefined}
+              />
+              {seg.label && (
+                <text
+                  className="map-edge-label"
+                  x={(seg.x1 + seg.x2) / 2}
+                  y={(seg.y1 + seg.y2) / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                >
+                  {seg.label}
+                </text>
+              )}
+            </g>
           ))}
           {rooms.map((room) => {
             const pos =

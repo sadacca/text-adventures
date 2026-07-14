@@ -33,10 +33,18 @@ function stripHistoryReplay(text: string): string {
   const startIdx = text.indexOf(startMarker);
   const endIdx = text.indexOf(endMarker);
   if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return text;
-  return (text.slice(0, startIdx) + text.slice(endIdx + endMarker.length)).replace(
-    /\n{3,}/g,
-    '\n\n',
-  );
+  return text.slice(0, startIdx) + text.slice(endIdx + endMarker.length);
+}
+
+/**
+ * Collapses runs of 3+ blank lines to a single blank line (some games separate
+ * sections with several, meant to fill a full-height terminal — dead space in our
+ * scrolling view), and — only for the transcript's very first chunk — trims leading
+ * blank lines entirely (Adventure's own banner opens with six of them).
+ */
+function normalizeResponse(text: string, isFirstChunk: boolean): string {
+  const collapsed = text.replace(/\n{3,}/g, '\n\n');
+  return isFirstChunk ? collapsed.replace(/^\n+/, '') : collapsed;
 }
 
 interface StatusLine {
@@ -211,7 +219,10 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         // resuming, but not text/status (e.g. the resume's own input_requested): ignore.
       } else if (event.kind === 'input_requested' && event.type === 'line') {
         if (!resuming) {
-          const response = stripHistoryReplay(pendingResponseChunks.join(''));
+          const response = normalizeResponse(
+            stripHistoryReplay(pendingResponseChunks.join('')),
+            get().transcript.length === 0,
+          );
           set((s) => ({ transcript: s.transcript + response }));
           void appendTranscriptEntry(gameId, {
             turn: event.turn,
