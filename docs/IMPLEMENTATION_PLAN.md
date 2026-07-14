@@ -667,6 +667,15 @@ Sketch, for whoever picks this up:
   live engine needed), so — like the rest of the automapper — it's a good fit for
   vitest coverage from the start, same pattern as `tests/graph.test.ts`.
 
+**Partially implemented (2026-07-14, UX-18 in `docs/MOBILE_UX_TODO_2.md`): detection +
+chips shipped; map stubs still deferred.** `src/map/mentions.ts`'s
+`detectMentionedDirections` uses exactly the narrowed 8-word heuristic this sketch
+anticipated (full compass words only, word-boundary matched); `RoomNode.mentionedDirections`
+and `Automapper.applyMentions` do the accumulation/attribution; `ExitsRow` and
+`CompassRose` render the suggestions as dashed, distinctly-styled chips that never touch
+`edges` or tap-to-travel's BFS. The map-canvas rendering of suggestions (a stub/marker at
+the room's position) described below is the one part of this sketch not yet built.
+
 ---
 
 ## 4. Phase 2 — LLM assistance (bring-your-own-token)

@@ -235,6 +235,13 @@
   opacity: 0.5;
 }
 
+/* UX-18: a direction merely mentioned in the room's prose, not a confirmed exit —
+   visually distinct (dashed) from a real chip so it reads as a guess, not a fact. */
+.chip-suggested {
+  border-style: dashed;
+  color: var(--text-dim);
+}
+
 .exits-row {
   display: flex;
   align-items: center;
@@ -344,6 +351,11 @@
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* UX-18: same "mentioned, not confirmed" treatment as .chip-suggested. */
+.compass-suggested {
+  border: 1px dashed var(--accent);
 }
 
 .command-bar {

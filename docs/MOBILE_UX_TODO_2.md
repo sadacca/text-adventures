@@ -702,6 +702,32 @@ appears in prose): a dashed `?` chip appears for a mentioned-but-untried directi
 tapping it sends the move, and after the move lands the suggestion is replaced by a
 normal exit chip. Check dashed borders are legible in light, dark, and retro themes.
 
+**Outcome (2026-07-14): done.** Implemented exactly as specced — `src/map/mentions.ts`'s
+`detectMentionedDirections` verbatim; `graph.ts` gained `RoomNode.mentionedDirections`,
+`Automapper.pendingText`/`applyMentions`, and the `buffer_text`-accumulation branch in
+`handleEvent`; `useKnownExits.ts` gained `useSuggestedExits`; `ExitsRow`/`CompassRose`
+render the dashed suggested state; `.chip-suggested`/`.compass-suggested` CSS added.
+`tests/mentions.test.ts` (4 cases), a new `graph.test.ts` describe block (2 cases:
+attribution to the arrival room, and that a mention survives a later confirmed edge —
+filtering that out is the UI hook's job), and 2 new `ExitsRow` cases in
+`story-ui.test.tsx` all added per the spec. `npm run lint`/`npm test`/`npm run format`/
+`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`)
+against the UX-17 sample game — **Zork I, not Adventure** (UX-17 bundled `zork1.z3`
+instead of the originally-planned `advent.z5`; this task's acceptance text above wasn't
+updated for that swap, noting it here instead): West of House's own arrival text ("You
+are standing in an open field **west** of a white house...") produces a dashed "W?" chip
+immediately on boot — a real, live example of exactly the false-positive-prone flavor
+text this heuristic accepts by design. Tapping it sends `w`, and the game responds by
+moving to Forest ("trees in all directions. To the **east**, there appears to be
+sunlight."); the exits row then correctly shows *nothing* for Forest, because the
+automapper's own reverse-edge rule already created an inferred `e` edge back to West of
+House the moment the `w` move confirmed — a live demonstration of `useSuggestedExits`
+correctly excluding directions that already have a live edge of any status, not just
+confirmed. Checked chip legibility (color + border, plus screenshots) in light, dark,
+and retro — dashed border reads clearly against all three.
+
 ---
 
 ## Batch 3 — story-file smarts

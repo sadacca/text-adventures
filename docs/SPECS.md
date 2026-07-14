@@ -171,6 +171,22 @@ room reached ≠ expected next room, if any `buffer_text` contains a line ending
 paths > 8 moves show a confirm ("uses N turns — lamp/hunger timers burn down"), because
 turns are a resource in many Infocom games.
 
+**2026-07-14 note (UX-18, Task 1.10's detection/diffing half):** `RoomNode` gained
+`mentionedDirections?: Direction[]` — the 8 unambiguous full compass words
+(n/s/e/w/ne/nw/se/sw only; word-boundary matched, so "northern"/"westward" don't count)
+found in a room's `buffer_text` since arrival, via `src/map/mentions.ts`'s
+`detectMentionedDirections`. `Automapper` accumulates `buffer_text` into a per-turn
+`pendingText` and attaches it to whichever room the turn's `status_line` resolves to
+*after* `handleStatusLine` runs (so movement text attributes to the arrival room, not the
+origin). Accepted limitations: negations ("no exit to the south") still match, and exits
+described without a direction word are missed — this is why the UI treats these as
+dashed, distinctly-styled *suggestions* (`ExitsRow`'s `?`-suffixed chips,
+`CompassRose`'s `.compass-suggested`), never real edges: they never enter `edges`, never
+participate in tap-to-travel's BFS, and detection never un-records a mention once a
+confirmed edge later exists in the same direction (that's the UI-level diffing hook's
+job, `useSuggestedExits` in `src/story/useKnownExits.ts`, not the graph's). Map rendering
+of suggestions (Task 1.10's other half) is still not built.
+
 ## 4. IndexedDB schema (`src/storage/db.ts`, via `idb`)
 
 Database `text-adventures`, version 1. One playthrough per game ⇒ `gameId` is the key
@@ -445,6 +461,6 @@ position.)
 - Turn counter increments on `command` events only.
 - `(unknown)` is a single shared node, not one per dark encounter.
 - Suggested-but-unconfirmed exits (parsing "there is a passage to the west" out of room
-  text and showing it before the player tries it) is a deliberately deferred idea, not
-  an oversight — design sketch in `IMPLEMENTATION_PLAN.md` Task 1.10. Not built because
-  the detection heuristic needs validating against real games' prose first.
+  text and showing it before the player tries it): the detection/diffing/chips half
+  shipped as UX-18 (2026-07-14, §3's note above) — map-rendering of suggestions (the
+  other half of `IMPLEMENTATION_PLAN.md` Task 1.10) is still not built.

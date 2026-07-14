@@ -99,6 +99,48 @@ describe('ExitsRow', () => {
     const { container } = render(<ExitsRow />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('UX-18: renders a suggested chip for a mentioned-but-untried direction', () => {
+    const sendCommand = vi.fn();
+    useEngineStore.setState({ inputType: 'line', sendCommand });
+    const graph = createEmptyGraph();
+    graph.rooms.a = {
+      id: 'a',
+      name: 'A',
+      pos: { x: 0, y: 0 },
+      posLocked: false,
+      flags: {},
+      mentionedDirections: ['w'],
+    };
+    graph.currentRoomId = 'a';
+    useMapStore.setState({ graph });
+
+    render(<ExitsRow />);
+    const suggested = screen.getByLabelText('Try w (mentioned in the text)');
+    fireEvent.click(suggested);
+    expect(sendCommand).toHaveBeenCalledWith('w');
+  });
+
+  it('UX-18: a confirmed edge replaces the suggested chip for the same direction', () => {
+    useEngineStore.setState({ inputType: 'line', sendCommand: vi.fn() });
+    const graph = createEmptyGraph();
+    graph.rooms.a = {
+      id: 'a',
+      name: 'A',
+      pos: { x: 0, y: 0 },
+      posLocked: false,
+      flags: {},
+      mentionedDirections: ['w'],
+    };
+    graph.rooms.b = { id: 'b', name: 'B', pos: { x: -1, y: 0 }, posLocked: false, flags: {} };
+    graph.edges.push({ from: 'a', to: 'b', dir: 'w', status: 'confirmed' });
+    graph.currentRoomId = 'a';
+    useMapStore.setState({ graph });
+
+    render(<ExitsRow />);
+    expect(screen.queryByLabelText('Try w (mentioned in the text)')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Go w')).toBeInTheDocument();
+  });
 });
 
 describe('TapWords', () => {
