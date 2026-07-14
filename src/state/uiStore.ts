@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, type PersistOptions } from 'zustand/middleware';
 
 export type Tab = 'library' | 'story' | 'map' | 'more';
 
@@ -30,29 +31,50 @@ export interface UiState {
   setRoomEditTarget: (id: string | null) => void;
 }
 
-export const useUiStore = create<UiState>((set) => ({
-  tab: 'library',
-  commandDraft: '',
-  theme: 'system',
-  fontScale: 1,
-  storyFont: 'system',
-  debugConsoleEnabled: false,
-  commandHistory: [],
-  roomEditTarget: null,
-  setTab: (tab) => set({ tab }),
-  setCommandDraft: (commandDraft) => set({ commandDraft }),
-  appendToDraft: (word) =>
-    set((s) => ({ commandDraft: s.commandDraft ? `${s.commandDraft} ${word}` : word })),
-  setTheme: (theme) => set({ theme }),
-  setFontScale: (fontScale) => set({ fontScale }),
-  setStoryFont: (storyFont) => set({ storyFont }),
-  setDebugConsoleEnabled: (debugConsoleEnabled) => set({ debugConsoleEnabled }),
-  pushCommandHistory: (text) =>
-    set((s) => ({
-      commandHistory: [text, ...s.commandHistory.filter((c) => c !== text)].slice(
-        0,
-        COMMAND_HISTORY_LIMIT,
-      ),
-    })),
-  setRoomEditTarget: (roomEditTarget) => set({ roomEditTarget }),
-}));
+/**
+ * UX-15: theme/fontScale/storyFont rehydrate synchronously from localStorage before first
+ * paint (SPECS.md §4 originally sketched an IndexedDB `settings` row for this — it was
+ * never built; this supersedes that with localStorage instead, which is what actually
+ * achieves "no light-theme flash"). Everything else here is session state (tab, drafts,
+ * history, the debug toggle, the room-edit-sheet target) and must NOT persist.
+ */
+const persistOptions: PersistOptions<
+  UiState,
+  Pick<UiState, 'theme' | 'fontScale' | 'storyFont'>
+> = {
+  name: 'text-adventures-settings',
+  version: 1,
+  partialize: (s) => ({ theme: s.theme, fontScale: s.fontScale, storyFont: s.storyFont }),
+};
+
+export const useUiStore = create<UiState>()(
+  persist(
+    (set) => ({
+      tab: 'library',
+      commandDraft: '',
+      theme: 'system',
+      fontScale: 1,
+      storyFont: 'system',
+      debugConsoleEnabled: false,
+      commandHistory: [],
+      roomEditTarget: null,
+      setTab: (tab) => set({ tab }),
+      setCommandDraft: (commandDraft) => set({ commandDraft }),
+      appendToDraft: (word) =>
+        set((s) => ({ commandDraft: s.commandDraft ? `${s.commandDraft} ${word}` : word })),
+      setTheme: (theme) => set({ theme }),
+      setFontScale: (fontScale) => set({ fontScale }),
+      setStoryFont: (storyFont) => set({ storyFont }),
+      setDebugConsoleEnabled: (debugConsoleEnabled) => set({ debugConsoleEnabled }),
+      pushCommandHistory: (text) =>
+        set((s) => ({
+          commandHistory: [text, ...s.commandHistory.filter((c) => c !== text)].slice(
+            0,
+            COMMAND_HISTORY_LIMIT,
+          ),
+        })),
+      setRoomEditTarget: (roomEditTarget) => set({ roomEditTarget }),
+    }),
+    persistOptions,
+  ),
+);

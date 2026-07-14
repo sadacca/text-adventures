@@ -188,6 +188,14 @@ almost everywhere.
 Restart flow: confirm dialog → delete `autosaves`, `maps`, `transcripts` rows for
 `gameId` (keep `games` and named `saves`) → start fresh.
 
+**2026-07-14 note (UX-15):** the `settings` IndexedDB row sketched above was never built.
+`src/state/uiStore.ts` instead persists `theme`/`fontScale`/`storyFont` via zustand's
+`persist` middleware to a single `localStorage` key, `text-adventures-settings` — this is
+what actually achieves "no light-theme flash," since it rehydrates synchronously before
+first paint, which an async IndexedDB read cannot. All other `uiStore` fields (`tab`,
+`commandDraft`, `commandHistory`, `debugConsoleEnabled`, `roomEditTarget`) are session
+state and are explicitly excluded via `partialize`.
+
 ## 5. Component inventory (React, `src/`)
 
 | Component | File | Responsibility |

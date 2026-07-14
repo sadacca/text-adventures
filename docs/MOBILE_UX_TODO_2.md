@@ -294,6 +294,20 @@ Acceptance: tests pass; manually (or via Playwright against `npm run dev`): set 
 Retro, story font Serif, text size 120% in More, reload the page — all three survive;
 the theme is applied before first paint (no light-theme flash).
 
+**Outcome (2026-07-14): done.** Implemented exactly as specced —
+`uiStore.ts` wrapped in `persist()` with `partialize` limited to
+`theme`/`fontScale`/`storyFont`; `tests/setup.ts` clears `localStorage` after every test;
+`tests/settingsPersist.test.ts` added. `npm run lint`/`npm test`/`npm run format`/
+`npm run build` all pass. **Live-verified with Playwright** (390×844,
+`npm run build && npm run preview`, real Chromium, not jsdom): set theme Retro, story
+font Serif, and text size to 110% via More, then reloaded the page —
+`localStorage['text-adventures-settings']` held exactly
+`{theme:"retro",fontScale:1.1,storyFont:"serif"}` (no `commandDraft`/`tab`/other session
+keys); after reload, `data-theme="retro"` and `--bg: #0d0d0d` were already applied (no
+flash), and re-opening More showed Retro/Serif still selected and text size still 110%.
+The `tab` correctly reset to Library on reload, confirming it's excluded from
+persistence as intended.
+
 ### UX-16: Launch straight back into the game
 
 Every launch lands on the Library and costs two taps to get back into the game being
