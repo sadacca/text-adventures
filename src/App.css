@@ -151,9 +151,18 @@
   overflow-y: auto;
   white-space: pre-wrap;
   word-wrap: break-word;
-  font-family: inherit;
   margin: 8px 0;
   line-height: 1.7;
+}
+
+.story-block {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.story-echo {
+  color: var(--text-dim);
+  font-weight: 600;
 }
 
 .story-body {
@@ -162,6 +171,20 @@
   display: flex;
   gap: 6px;
   align-items: flex-end;
+  position: relative;
+}
+
+.new-text-pill {
+  position: absolute;
+  bottom: var(--space-2);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  box-shadow: var(--shadow-md);
 }
 
 .tap-word {

@@ -98,6 +98,13 @@ describe('TapWords', () => {
     expect(useUiStore.getState().commandDraft).toBe('take lamp');
     expect(document.activeElement?.tagName).not.toBe('INPUT');
   });
+
+  it('renders a command-echo line distinctly from game prose', () => {
+    render(<TapWords text={'> take lamp\nTaken.'} />);
+    const echo = screen.getByText((_, node) => node?.textContent === '> take lamp');
+    expect(echo).toHaveClass('story-echo');
+    expect(screen.getByText('Taken.')).not.toHaveClass('story-echo');
+  });
 });
 
 describe('CommandBar', () => {

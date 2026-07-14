@@ -55,7 +55,7 @@ interface StatusLine {
 interface EngineState {
   gameId: string | null;
   gameTitle: string;
-  transcript: string;
+  transcript: string[];
   status: StatusLine | null;
   inputType: 'line' | 'char' | null;
   saves: SaveSummary[];
@@ -113,7 +113,7 @@ function teardownActiveSession() {
 export const useEngineStore = create<EngineState>((set, get) => ({
   gameId: null,
   gameTitle: '',
-  transcript: '',
+  transcript: [],
   status: null,
   inputType: null,
   saves: [],
@@ -142,7 +142,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       gameId,
       loading: true,
       error: null,
-      transcript: '',
+      transcript: [],
       status: null,
       inputType: null,
       saves: [],
@@ -223,7 +223,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
             stripHistoryReplay(pendingResponseChunks.join('')),
             get().transcript.length === 0,
           );
-          set((s) => ({ transcript: s.transcript + response }));
+          set((s) => ({ transcript: [...s.transcript, response] }));
           void appendTranscriptEntry(gameId, {
             turn: event.turn,
             command: pendingCommand ?? '',
@@ -299,11 +299,8 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     // it ever saw, autosave noise included).
     if (resuming) {
       const priorEntries = await getTranscript(gameId);
-      // No separator/prefix: each stored response already includes its own leading
-      // command echo and trailing input prompt (that's how Bocfel formats buffer
-      // output), so concatenating them bare reproduces live play exactly.
-      const rendered = priorEntries.map((e) => e.response).join('');
-      if (rendered) set({ transcript: rendered });
+      const rendered = priorEntries.map((e) => e.response).filter(Boolean);
+      if (rendered.length > 0) set({ transcript: rendered });
       resuming = false;
     }
 
@@ -319,7 +316,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     set({
       gameId: null,
       gameTitle: '',
-      transcript: '',
+      transcript: [],
       status: null,
       inputType: null,
       saves: [],

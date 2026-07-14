@@ -358,6 +358,15 @@ so normal inter-turn spacing elsewhere is untouched).
 Verified via Playwright against a real `advent.z5` session (light + dark + forced
 theme override + increased font scale), plus `npm run lint`/`npm test`/`npm run build`.)
 (2026-07-13, second slice: licenses screen, install prompt, and offline verification.)
+(2026-07-14, UX-4: `engineStore.transcript` changed from a single accumulated `string`
+to `string[]` — one entry per turn's response chunk. `TapWords.tsx` is now a memoized
+per-chunk block renderer (a `<div className="story-block">`, not a `<pre>`); the scroll
+container and its scrollTop-pinning effect moved up to `StoryScreen.tsx`, which now also
+does smart scroll pinning (only auto-scrolls to the newest text if the player was
+already near the bottom; otherwise shows a "↓ New text" pill). Command-echo lines
+(trimmed text starting with `>`) render via `.story-echo` to stand out from game prose.
+The `get().transcript.length === 0` "first chunk" check noted above is unchanged in
+meaning (array length instead of string length).
 
 - **Licenses/about screen** (`src/more/AboutSection.tsx`, `src/more/licenses.ts`):
   rendered in `MoreScreen` below Saves, one native `<details>` per dependency (name,
