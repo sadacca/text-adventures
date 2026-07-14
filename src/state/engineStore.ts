@@ -12,6 +12,7 @@ import { listSaves, readSave, writeSave, type SaveSummary } from '../storage/sav
 import { appendTranscriptEntry, getTranscript } from '../storage/transcripts.js';
 import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
 import { useMapStore } from './mapStore.js';
+import { useDialogStore } from './dialogStore.js';
 
 /** DebugConsole's live event feed (Task 1.4): capped so a long session can't leak memory. */
 const DEBUG_EVENT_LIMIT = 300;
@@ -249,25 +250,31 @@ export const useEngineStore = create<EngineState>((set, get) => ({
 
     engine.onNamedSavePrompt(async (kind) => {
       if (kind === 'save') {
-        const name = window.prompt('Save as:');
-        return name ? { name } : null;
+        const name = await useDialogStore.getState().ask({
+          kind: 'prompt',
+          title: 'Save game',
+          placeholder: 'Save name',
+        });
+        return name ? { name: name as string } : null;
       }
       const preselected = get().pendingRestoreName;
       set({ pendingRestoreName: null });
-      const chosen =
-        preselected ??
-        (() => {
-          const names = get().saves.map((s) => s.name);
-          if (names.length === 0) {
-            window.alert('No saved games yet.');
-            return null;
-          }
-          return window.prompt(`Restore which save?\n${names.join(', ')}`, names[0]);
-        })();
+      let chosen: string | null = preselected;
+      if (!chosen) {
+        const names = get().saves.map((s) => s.name);
+        if (names.length === 0) {
+          await useDialogStore.getState().ask({ kind: 'alert', title: 'No saved games yet.' });
+          chosen = null;
+        } else {
+          chosen = (await useDialogStore
+            .getState()
+            .ask({ kind: 'pick', title: 'Restore which save?', options: names })) as string | null;
+        }
+      }
       if (!chosen) return null;
       const bytes = await readSave(gameId, chosen);
       if (!bytes) {
-        window.alert(`No save named "${chosen}"`);
+        await useDialogStore.getState().ask({ kind: 'alert', title: `No save named "${chosen}"` });
         return null;
       }
       return { name: chosen, bytes };

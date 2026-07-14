@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useUiStore } from '../state/uiStore';
 import { useEngineStore } from '../state/engineStore';
+import { useDialogStore } from '../state/dialogStore';
 import {
   addOrTouchGame,
   deleteGame,
@@ -68,19 +69,28 @@ export function LibraryScreen() {
   }
 
   async function onDelete(game: GameRecord) {
-    if (!window.confirm(`Delete "${game.title}"? This removes its saves and map too.`)) return;
+    const confirmed = await useDialogStore.getState().ask({
+      kind: 'confirm',
+      title: `Delete "${game.title}"?`,
+      body: 'This removes its saves and map too.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
     if (activeGameId === game.gameId) useEngineStore.getState().closeGame();
     await deleteGame(game.gameId);
     await refresh();
   }
 
   async function onRestart(game: GameRecord) {
-    if (
-      !window.confirm(
-        `Restart "${game.title}"? This wipes the current autosave, map, and transcript. Named saves are kept.`,
-      )
-    )
-      return;
+    const confirmed = await useDialogStore.getState().ask({
+      kind: 'confirm',
+      title: `Restart "${game.title}"?`,
+      body: 'This wipes the current autosave, map, and transcript. Named saves are kept.',
+      confirmLabel: 'Restart',
+      danger: true,
+    });
+    if (!confirmed) return;
     if (activeGameId === game.gameId) {
       await restartPlaythrough();
     } else {

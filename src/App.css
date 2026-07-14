@@ -728,7 +728,7 @@
   margin-top: 8px;
 }
 
-.room-edit-actions button {
+.room-edit-actions button:not(.btn-primary):not(.btn-danger) {
   padding: 0 16px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -738,4 +738,16 @@
 .room-edit-actions button.danger {
   color: var(--danger);
   border-color: var(--danger);
+}
+
+.room-edit-actions button.btn-primary,
+.room-edit-actions button.btn-danger {
+  padding: 0 16px;
+  border-radius: 6px;
+}
+
+.dialog-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }

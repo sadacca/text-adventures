@@ -5,6 +5,7 @@ import { LibraryScreen } from './library/LibraryScreen';
 import { StoryScreen } from './story/StoryScreen';
 import { MapScreen } from './map/MapScreen';
 import { MoreScreen } from './more/MoreScreen';
+import { DialogHost } from './dialog/DialogHost';
 import './App.css';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
@@ -67,6 +68,7 @@ function App() {
           </button>
         ))}
       </nav>
+      <DialogHost />
     </div>
   );
 }

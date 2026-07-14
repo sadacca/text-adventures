@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import { useMapStore } from '../state/mapStore';
+import { useDialogStore } from '../state/dialogStore';
 import { computePath, isLongTrip } from './travel';
 import type { MapGraph, RoomEdge, RoomNode } from './graph';
 import { isCompassDirection, isStubDirection } from './directions';
@@ -267,9 +268,12 @@ export function MapScreen() {
     }
     if (path.length === 0) return;
     if (isLongTrip(path)) {
-      const proceed = window.confirm(
-        `This trip is ${path.length} turns — lamp/hunger timers burn down. Continue?`,
-      );
+      const proceed = await useDialogStore.getState().ask({
+        kind: 'confirm',
+        title: `This trip is ${path.length} turns`,
+        body: 'Lamp/hunger timers burn down. Continue?',
+        confirmLabel: 'Travel',
+      });
       if (!proceed) return;
     }
     const result = await travelTo(path);

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMapStore } from '../state/mapStore';
+import { useDialogStore } from '../state/dialogStore';
 import type { RoomNode } from './graph';
 
 /**
@@ -86,8 +87,14 @@ export function RoomEditSheet({
           <button
             type="button"
             className="tap-target danger"
-            onClick={() => {
-              if (window.confirm(`Delete "${room.name}" from the map?`)) {
+            onClick={async () => {
+              const confirmed = await useDialogStore.getState().ask({
+                kind: 'confirm',
+                title: `Delete "${room.name}" from the map?`,
+                confirmLabel: 'Delete',
+                danger: true,
+              });
+              if (confirmed) {
                 deleteRoomAction(room.id);
                 onClose();
               }
