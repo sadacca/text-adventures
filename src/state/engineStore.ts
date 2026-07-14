@@ -98,6 +98,8 @@ interface EngineState {
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
+  /** UX-14: answers a `char`-type input_requested ("press any key" prompts, menus). */
+  sendChar: (value: string) => void;
   restoreNamed: (name: string) => void;
   refreshSaves: () => Promise<void>;
   restartPlaythrough: () => Promise<void>;
@@ -247,30 +249,37 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         }
       } else if (isSilent) {
         // resuming, but not text/status (e.g. the resume's own input_requested): ignore.
-      } else if (event.kind === 'input_requested' && event.type === 'line') {
+      } else if (event.kind === 'input_requested') {
         if (!resuming) {
           const response = normalizeResponse(
             stripHistoryReplay(pendingResponseChunks.join('')),
             get().transcript.length === 0,
           );
-          set((s) => ({ transcript: [...s.transcript, response] }));
-          void appendTranscriptEntry(gameId, {
-            turn: event.turn,
-            command: pendingCommand ?? '',
-            response,
-          });
-          pendingCommand = null;
-          lastKnownTurn = event.turn;
-          if (event.turn > lastAutosaveTurn) {
-            lastAutosaveTurn = event.turn;
-            void engine
-              .saveAutosave()
-              .then((bytes) => writeAutosaveGeneration(gameId, bytes, event.turn))
-              .catch((err: unknown) => console.error('autosave failed', err));
+          // A line request always commits (existing behavior, unchanged). A char request
+          // (UX-14) commits only when there is actual text to show — it must never
+          // autosave (saveAutosave dispatches a line command, which a char prompt can't
+          // accept).
+          if (event.type === 'line' || response.trim() !== '') {
+            set((s) => ({ transcript: [...s.transcript, response] }));
+            void appendTranscriptEntry(gameId, {
+              turn: event.turn,
+              command: pendingCommand ?? '',
+              response,
+            });
+            pendingCommand = null;
+            pendingResponseChunks = [];
+          }
+          if (event.type === 'line') {
+            lastKnownTurn = event.turn;
+            if (event.turn > lastAutosaveTurn) {
+              lastAutosaveTurn = event.turn;
+              void engine
+                .saveAutosave()
+                .then((bytes) => writeAutosaveGeneration(gameId, bytes, event.turn))
+                .catch((err: unknown) => console.error('autosave failed', err));
+            }
           }
         }
-        set({ inputType: 'line' });
-      } else if (event.kind === 'input_requested') {
         set({ inputType: event.type });
       } else if (event.kind === 'quit') {
         set({ inputType: null });
@@ -364,6 +373,11 @@ export const useEngineStore = create<EngineState>((set, get) => ({
 
   sendCommand(text) {
     activeEngine?.sendCommand(text);
+    set((s) => ({ pinRequestId: s.pinRequestId + 1 }));
+  },
+
+  sendChar(value) {
+    activeEngine?.sendChar(value);
     set((s) => ({ pinRequestId: s.pinRequestId + 1 }));
   },
 

@@ -221,6 +221,22 @@ set `useEngineStore.setState({ inputType: 'char' })` in a running session at 390
 confirm the command bar swaps to the continue button in all themes. Record what you did
 as a dated note in this task's entry.
 
+**Outcome (2026-07-14): done.** Implemented exactly as specced —
+`EngineHandle.sendChar`/`engine.ts`/`engineStore.sendChar` unchanged from the spec above;
+the `input_requested` branches in `engineStore.ts` were merged into one, gated on
+`event.type === 'line' || response.trim() !== ''` for the commit and `event.type ===
+'line'` for the autosave, so a char prompt's own text (e.g. "press any key") reaches the
+transcript without ever triggering a silent autosave. `CommandBar.tsx` renders the
+continue-button form verbatim from the spec, gated on `inputType === 'char'`.
+`npm run lint`/`npm test`/`npm run format`/`npm run build` all pass; `tests/travelTo.test.ts`
+got the `sendChar() {}` stub, and the two specified `tests/story-ui.test.tsx` cases were
+added (continue button present/Send+history absent/click sends `' '`; typing `n` sends
+`'n'` and the key input stays empty). No story file was bundled in the repo yet at the
+point this task was done (UX-17, later in this same batch, adds one) and no game is
+known to boot straight into a char prompt in ordinary play, so — per this task's own
+acceptance note — verification is the fake-engine unit tests above; a live devtools-poke/
+real-device pass is still open.
+
 ### UX-15: Settings persist across reloads
 
 `uiStore` has no persistence: theme, story font, and text size all reset to defaults on

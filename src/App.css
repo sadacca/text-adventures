@@ -380,6 +380,11 @@
   outline-offset: 1px;
 }
 
+/* UX-14: char-input prompt's "Tap to continue" button fills the remaining row. */
+.continue-button {
+  flex: 1;
+}
+
 .settings-card {
   display: flex;
   flex-direction: column;

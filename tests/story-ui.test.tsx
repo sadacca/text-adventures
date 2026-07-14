@@ -255,6 +255,29 @@ describe('CommandBar', () => {
       vi.useRealTimers();
     }
   });
+
+  it('UX-14: swaps to "Tap to continue" for a char prompt, hiding Send and history', () => {
+    const sendChar = vi.fn();
+    useEngineStore.setState({ inputType: 'char', sendChar });
+    render(<CommandBar />);
+    expect(screen.getByText('Tap to continue')).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Send. Long press to repeat last command'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Command history')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Tap to continue'));
+    expect(sendChar).toHaveBeenCalledWith(' ');
+  });
+
+  it('UX-14: typing a key during a char prompt sends it and keeps the input empty', () => {
+    const sendChar = vi.fn();
+    useEngineStore.setState({ inputType: 'char', sendChar });
+    render(<CommandBar />);
+    const keyInput = screen.getByLabelText('Type a single key');
+    fireEvent.change(keyInput, { target: { value: 'n' } });
+    expect(sendChar).toHaveBeenCalledWith('n');
+    expect(keyInput).toHaveValue('');
+  });
 });
 
 describe('engineStore pinRequestId', () => {

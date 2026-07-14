@@ -29,6 +29,10 @@ export type GameEvent =
 export interface EngineHandle {
   start(story: Uint8Array, opts: { autorestore: boolean }): Promise<void>;
   sendCommand(text: string): void; // programmatic input (compass rose, travel)
+  /** Answers a `char` input request ("press any key" prompts, menus). Only valid while
+   *  the last input_requested event was type 'char'. Does not advance the turn counter
+   *  and bypasses the line-command queue — a char prompt IS the ready state. */
+  sendChar(value: string): void;
   on(listener: (e: GameEvent) => void): () => void; // returns unsubscribe
   saveAutosave(): Promise<Uint8Array>; // opaque snapshot blob
   stop(): Promise<void>;
