@@ -20,12 +20,17 @@ function App() {
   const setTab = useUiStore((s) => s.setTab);
   const theme = useUiStore((s) => s.theme);
   const fontScale = useUiStore((s) => s.fontScale);
+  const storyFont = useUiStore((s) => s.storyFont);
 
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', theme);
 
+    if (theme === 'retro') {
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#0d0d0d');
+      return;
+    }
     const isDark =
       theme === 'dark' ||
       (theme === 'system' &&
@@ -39,6 +44,16 @@ function App() {
   useEffect(() => {
     document.documentElement.style.fontSize = `${16 * fontScale}px`;
   }, [fontScale]);
+
+  useEffect(() => {
+    const value =
+      storyFont === 'serif'
+        ? 'Georgia, "Times New Roman", serif'
+        : storyFont === 'mono'
+          ? 'ui-monospace, Menlo, Consolas, monospace'
+          : 'inherit';
+    document.documentElement.style.setProperty('--story-font', value);
+  }, [storyFont]);
 
   // Registered once at the top level: beforeinstallprompt can fire before any
   // particular tab is mounted, and Chrome only ever dispatches it once per load.

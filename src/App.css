@@ -153,6 +153,7 @@
   word-wrap: break-word;
   margin: 8px 0;
   line-height: 1.7;
+  font-family: var(--story-font, inherit);
 }
 
 .story-block {
