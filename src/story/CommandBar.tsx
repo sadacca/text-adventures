@@ -96,6 +96,16 @@ export function CommandBar() {
           }}
           placeholder={inputType === 'line' ? 'Enter a command…' : 'Waiting…'}
         />
+        {draft.trim() !== '' && (
+          <button
+            type="button"
+            className="tap-target"
+            aria-label="Delete last word"
+            onClick={() => setDraft(draft.trimEnd().replace(/\S+$/, '').trimEnd())}
+          >
+            ⌫
+          </button>
+        )}
         <button type="submit" className="tap-target" disabled={inputType !== 'line'}>
           Send
         </button>

@@ -126,4 +126,18 @@ describe('CommandBar', () => {
     fireEvent.click(screen.getByText('take lamp'));
     expect(useUiStore.getState().commandDraft).toBe('take lamp');
   });
+
+  it('deletes the last word of the draft and hides itself once the draft is empty', () => {
+    useEngineStore.setState({ inputType: 'line', sendCommand: vi.fn() });
+    useUiStore.setState({ commandDraft: 'take brass lamp' });
+    render(<CommandBar />);
+    const deleteLastWord = screen.getByLabelText('Delete last word');
+    fireEvent.click(deleteLastWord);
+    expect(useUiStore.getState().commandDraft).toBe('take brass');
+    fireEvent.click(screen.getByLabelText('Delete last word'));
+    expect(useUiStore.getState().commandDraft).toBe('take');
+    fireEvent.click(screen.getByLabelText('Delete last word'));
+    expect(useUiStore.getState().commandDraft).toBe('');
+    expect(screen.queryByLabelText('Delete last word')).not.toBeInTheDocument();
+  });
 });
