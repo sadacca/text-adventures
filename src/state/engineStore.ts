@@ -82,6 +82,12 @@ interface EngineState {
    *  manual command mid-trip. */
   traveling: boolean;
 
+  /** Bumped on every player-initiated command (sendCommand/travelTo) so StoryScreen can
+   *  force the transcript back to pinned-at-bottom even if the player had scrolled up to
+   *  read back — sending a command is an explicit request to see its response, so it
+   *  should never be missed behind a "new text" pill. */
+  pinRequestId: number;
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -124,6 +130,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   debugEvents: [],
   recordingFixture: false,
   traveling: false,
+  pinRequestId: 0,
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -334,10 +341,11 @@ export const useEngineStore = create<EngineState>((set, get) => ({
 
   sendCommand(text) {
     activeEngine?.sendCommand(text);
+    set((s) => ({ pinRequestId: s.pinRequestId + 1 }));
   },
 
   restoreNamed(name) {
-    set({ pendingRestoreName: name });
+    set((s) => ({ pendingRestoreName: name, pinRequestId: s.pinRequestId + 1 }));
     activeEngine?.sendCommand('restore');
   },
 
@@ -359,7 +367,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   async travelTo(path) {
     if (!activeEngine || path.length === 0) return 'completed';
     const engine = activeEngine;
-    set({ traveling: true });
+    set((s) => ({ traveling: true, pinRequestId: s.pinRequestId + 1 }));
     try {
       for (const step of path) {
         let bufferedText = '';

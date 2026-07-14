@@ -367,6 +367,13 @@ already near the bottom; otherwise shows a "↓ New text" pill). Command-echo li
 (trimmed text starting with `>`) render via `.story-echo` to stand out from game prose.
 The `get().transcript.length === 0` "first chunk" check noted above is unchanged in
 meaning (array length instead of string length).
+(2026-07-14, follow-up: smart pinning alone could hide the reply to the player's own
+command behind the pill if they'd scrolled up first. `engineStore` gained
+`pinRequestId` (bumped in `sendCommand`, `restoreNamed`, and at the start of
+`travelTo` — every player-initiated action, not background/silent events), and
+`StoryScreen` re-pins to the bottom and forces `scrollTop` immediately whenever it
+changes, so sending a command always surfaces its response regardless of scroll
+position.)
 
 - **Licenses/about screen** (`src/more/AboutSection.tsx`, `src/more/licenses.ts`):
   rendered in `MoreScreen` below Saves, one native `<details>` per dependency (name,
