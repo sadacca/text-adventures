@@ -6,6 +6,7 @@ import { useMapStore } from '../src/state/mapStore';
 import { createEmptyGraph } from '../src/map/graph';
 import { VerbChips } from '../src/story/VerbChips';
 import { CompassRose } from '../src/story/CompassRose';
+import { ExitsRow } from '../src/story/ExitsRow';
 import { TapWords } from '../src/story/TapWords';
 import { CommandBar } from '../src/story/CommandBar';
 
@@ -74,6 +75,29 @@ describe('CompassRose', () => {
     fireEvent.click(screen.getByLabelText('Expand compass'));
     expect(screen.getByLabelText('Go n')).toHaveClass('compass-known');
     expect(screen.getByLabelText('Go s')).not.toHaveClass('compass-known');
+  });
+});
+
+describe('ExitsRow', () => {
+  it('renders a chip per confirmed exit and sends the direction on tap', () => {
+    const sendCommand = vi.fn();
+    useEngineStore.setState({ inputType: 'line', sendCommand });
+    const graph = createEmptyGraph();
+    graph.rooms.a = { id: 'a', name: 'A', pos: { x: 0, y: 0 }, posLocked: false, flags: {} };
+    graph.rooms.b = { id: 'b', name: 'B', pos: { x: 0, y: -1 }, posLocked: false, flags: {} };
+    graph.edges.push({ from: 'a', to: 'b', dir: 'n', status: 'confirmed' });
+    graph.currentRoomId = 'a';
+    useMapStore.setState({ graph });
+
+    render(<ExitsRow />);
+    fireEvent.click(screen.getByLabelText('Go n'));
+    expect(sendCommand).toHaveBeenCalledWith('n');
+  });
+
+  it('renders nothing when there are no known exits', () => {
+    useMapStore.setState({ graph: createEmptyGraph() });
+    const { container } = render(<ExitsRow />);
+    expect(container.firstChild).toBeNull();
   });
 });
 

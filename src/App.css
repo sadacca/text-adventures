@@ -219,6 +219,21 @@
   opacity: 0.5;
 }
 
+.exits-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  flex-shrink: 0;
+}
+
+.exits-row-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 /*
  * Compass rose: Task 1.7 wants it "persistent" and compact, which reads as a floating
  * corner FAB — but docking it as its own flex column (sibling of the transcript, via

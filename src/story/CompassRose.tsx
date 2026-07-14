@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
-import { useMapStore } from '../state/mapStore';
 import type { Direction } from '../map/graph';
-import { isCompassDirection } from '../map/directions';
+import { useKnownExits } from './useKnownExits';
 
 /** Grid layout of the expanded compass; `null` cells are just spacers. */
 const LAYOUT: (Direction | null)[][] = [
@@ -36,23 +35,7 @@ export function CompassRose() {
   const [expanded, setExpanded] = useState(false);
   const sendCommand = useEngineStore((s) => s.sendCommand);
   const inputType = useEngineStore((s) => s.inputType);
-  const graph = useMapStore((s) => s.graph);
-
-  const knownExits = useMemo(() => {
-    const exits = new Set<Direction>();
-    if (!graph.currentRoomId) return exits;
-    for (const edge of graph.edges) {
-      if (
-        edge.from === graph.currentRoomId &&
-        !edge.userDeleted &&
-        edge.status === 'confirmed' &&
-        isCompassDirection(edge.dir)
-      ) {
-        exits.add(edge.dir);
-      }
-    }
-    return exits;
-  }, [graph]);
+  const knownExits = useKnownExits();
 
   function go(dir: Direction) {
     sendCommand(dir);
