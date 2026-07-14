@@ -105,8 +105,8 @@ export function StoryScreen() {
             ↓ New text
           </button>
         )}
-        <CompassRose />
       </div>
+      <CompassRose />
       <VerbChips />
       <CommandBar />
       {debugConsoleEnabled && <DebugConsole />}
