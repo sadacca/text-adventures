@@ -406,7 +406,7 @@ reading of `backButton.ts`'s priority chain, not exercised live in this pass.
 
 ## Tier 3 — delight (do these only after all of Tier 1–2 are merged)
 
-### UX-11: Score change toast [visual check]
+### UX-11: Score change toast [visual check] — done (2026-07-14)
 
 `engineStore` already sets `status: { left, right }` per status_line, where `right` is
 usually `Score: X  Moves: Y` or similar. In `engineStore`'s status_line handling,
@@ -420,7 +420,15 @@ Only positive deltas toast (score can drop or the number can be a clock — fals
 positives on decrease are worse than missing them). Reset the module-level previous
 value in `openGame`/`closeGame`.
 
-### UX-12: Long-press a word to examine it
+Manual verification (2026-07-14, Playwright at 390×844 against `advent.z5`): poked the
+live `engineStore` singleton with `scoreDelta: {amount: 7, id: 1}` — the `+7` pill
+rendered top-center of `.story-body` over the transcript, and disappeared on its own
+after ~2.5s (`.score-toast` count 0). Re-checked with `theme: 'dark'` and a second delta
+(`+12`) — text stayed readable against the dark pill background. `right`-field parsing
+and the increase-only/reset-on-`openGame` logic are covered by
+`tests/scoreDelta.test.ts`.
+
+### UX-12: Long-press a word to examine it — done (2026-07-14)
 
 In `TapWords`, add pointer handlers per word span: on `pointerdown` start a 500ms
 timer; on `pointerup`/`pointerleave`/`pointercancel` clear it; if it fires, set a
@@ -433,12 +441,23 @@ point. Add a test simulating the click path still working (existing tests) — l
 timing paths may be covered with `vi.useFakeTimers` if straightforward; otherwise note
 manual verification.
 
-### UX-13: Long-press Send repeats the last command
+Covered with `vi.useFakeTimers` in `tests/story-ui.test.tsx` (fire, move-cancel, and the
+inputType gate). Manual verification (2026-07-14, Playwright at 390×844 against
+`advent.z5`, real `PointerEvent`-based mouse down/up, not `fireEvent`): held the word
+"building" for 650ms — the transcript shows `examine building` sent and answered, and the
+command draft stayed empty afterward (the following tap was suppressed, not appended).
+
+### UX-13: Long-press Send repeats the last command — done (2026-07-14)
 
 In `CommandBar`, when the draft is empty and `commandHistory[0]` exists, long-press
 (same 500ms pointer pattern as UX-12) on the Send button sends `commandHistory[0]`
 with `haptic(20)`. Short-press behavior unchanged (submit does nothing on empty
 draft). Add `aria-label="Send. Long press to repeat last command"` to the button.
+
+Manual verification (2026-07-14, Playwright at 390×844 against `advent.z5`, real
+`PointerEvent`-based mouse down/up): submitted `look` via the command bar, then held
+Send for 650ms with the draft empty — the transcript shows `look` sent and answered a
+second time.
 
 ### Explicitly deferred — do NOT attempt
 

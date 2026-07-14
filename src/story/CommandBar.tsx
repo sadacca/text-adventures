@@ -5,6 +5,9 @@ import { useKeyboardInset } from './useKeyboardInset';
 import { haptic } from '../haptics';
 
 const SWIPE_UP_THRESHOLD = 40; // px
+/** UX-13: same 500ms long-press pattern as UX-12's tap-word examine. */
+const SEND_LONG_PRESS_MS = 500;
+const SEND_LONG_PRESS_CANCEL_PX = 10;
 
 /**
  * Task 1.7: the soft-keyboard-correct text field, plus history access. Input attributes
@@ -27,6 +30,20 @@ export function CommandBar() {
   const inputRef = useRef<HTMLInputElement>(null);
   const touchStartY = useRef<number | null>(null);
   const inset = useKeyboardInset();
+
+  // UX-13: long-pressing Send with an empty draft repeats the last command. Short-press
+  // behavior is untouched — submit() already no-ops on an empty draft, so no suppression
+  // flag is needed here the way UX-12 needs one for the tap-word click that follows.
+  const sendPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendPressStart = useRef<{ x: number; y: number } | null>(null);
+
+  function clearSendLongPress() {
+    if (sendPressTimer.current !== null) {
+      clearTimeout(sendPressTimer.current);
+      sendPressTimer.current = null;
+    }
+    sendPressStart.current = null;
+  }
 
   function submit() {
     const text = draft.trim();
@@ -108,7 +125,31 @@ export function CommandBar() {
             ⌫
           </button>
         )}
-        <button type="submit" className="tap-target" disabled={inputType !== 'line'}>
+        <button
+          type="submit"
+          className="tap-target"
+          disabled={inputType !== 'line'}
+          aria-label="Send. Long press to repeat last command"
+          onPointerDown={(e) => {
+            if (draft.trim() !== '' || commandHistory.length === 0) return;
+            sendPressStart.current = { x: e.clientX, y: e.clientY };
+            sendPressTimer.current = setTimeout(() => {
+              sendPressTimer.current = null;
+              haptic(20);
+              sendCommand(commandHistory[0]);
+            }, SEND_LONG_PRESS_MS);
+          }}
+          onPointerUp={clearSendLongPress}
+          onPointerLeave={clearSendLongPress}
+          onPointerCancel={clearSendLongPress}
+          onPointerMove={(e) => {
+            const start = sendPressStart.current;
+            if (!start) return;
+            if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > SEND_LONG_PRESS_CANCEL_PX) {
+              clearSendLongPress();
+            }
+          }}
+        >
           Send
         </button>
       </form>

@@ -223,6 +223,38 @@ describe('CommandBar', () => {
     expect(useUiStore.getState().commandDraft).toBe('');
     expect(screen.queryByLabelText('Delete last word')).not.toBeInTheDocument();
   });
+
+  it('long-pressing Send with an empty draft repeats the last command', () => {
+    vi.useFakeTimers();
+    try {
+      const sendCommand = vi.fn();
+      useEngineStore.setState({ inputType: 'line', sendCommand });
+      useUiStore.setState({ commandDraft: '', commandHistory: ['north', 'take lamp'] });
+      render(<CommandBar />);
+      const send = screen.getByLabelText('Send. Long press to repeat last command');
+      fireEvent.pointerDown(send, { clientX: 0, clientY: 0 });
+      vi.advanceTimersByTime(500);
+      expect(sendCommand).toHaveBeenCalledWith('north');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not repeat on long-press when the draft has text', () => {
+    vi.useFakeTimers();
+    try {
+      const sendCommand = vi.fn();
+      useEngineStore.setState({ inputType: 'line', sendCommand });
+      useUiStore.setState({ commandDraft: 'take lamp', commandHistory: ['north'] });
+      render(<CommandBar />);
+      const send = screen.getByLabelText('Send. Long press to repeat last command');
+      fireEvent.pointerDown(send, { clientX: 0, clientY: 0 });
+      vi.advanceTimersByTime(500);
+      expect(sendCommand).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('engineStore pinRequestId', () => {
