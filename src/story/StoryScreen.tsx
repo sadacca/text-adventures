@@ -16,6 +16,7 @@ export function StoryScreen() {
   const error = useEngineStore((s) => s.error);
   const transcript = useEngineStore((s) => s.transcript);
   const status = useEngineStore((s) => s.status);
+  const pinRequestId = useEngineStore((s) => s.pinRequestId);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -34,6 +35,19 @@ export function StoryScreen() {
       setNewBelow(true);
     }
   }, [transcript]);
+
+  // Sending a command is an explicit request to see its response — re-pin to the
+  // bottom even if the player had scrolled up to read back, so the reply to what they
+  // just typed/tapped is never hidden behind the "new text" pill. Only the DOM scroll
+  // position is touched here (not React state): forcing scrollTop to scrollHeight fires
+  // a native scroll event, and the existing onScroll handler clears `newBelow` once it
+  // sees we're back at the bottom.
+  useEffect(() => {
+    if (pinRequestId === 0) return;
+    pinnedRef.current = true;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [pinRequestId]);
 
   function handleScroll() {
     const el = scrollRef.current;

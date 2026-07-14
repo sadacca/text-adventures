@@ -148,3 +148,11 @@ describe('CommandBar', () => {
     expect(screen.queryByLabelText('Delete last word')).not.toBeInTheDocument();
   });
 });
+
+describe('engineStore pinRequestId', () => {
+  it('bumps on every sendCommand, so StoryScreen can re-pin scroll to the reply', () => {
+    const before = useEngineStore.getState().pinRequestId;
+    useEngineStore.getState().sendCommand('look');
+    expect(useEngineStore.getState().pinRequestId).toBe(before + 1);
+  });
+});
