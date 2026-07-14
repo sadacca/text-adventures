@@ -12,6 +12,7 @@ import { listSaves, readSave, writeSave, type SaveSummary } from '../storage/sav
 import { appendTranscriptEntry, getTranscript } from '../storage/transcripts.js';
 import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
 import { useMapStore } from './mapStore.js';
+import { useDialogStore } from './dialogStore.js';
 
 /** DebugConsole's live event feed (Task 1.4): capped so a long session can't leak memory. */
 const DEBUG_EVENT_LIMIT = 300;
@@ -55,7 +56,7 @@ interface StatusLine {
 interface EngineState {
   gameId: string | null;
   gameTitle: string;
-  transcript: string;
+  transcript: string[];
   status: StatusLine | null;
   inputType: 'line' | 'char' | null;
   saves: SaveSummary[];
@@ -113,7 +114,7 @@ function teardownActiveSession() {
 export const useEngineStore = create<EngineState>((set, get) => ({
   gameId: null,
   gameTitle: '',
-  transcript: '',
+  transcript: [],
   status: null,
   inputType: null,
   saves: [],
@@ -142,7 +143,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       gameId,
       loading: true,
       error: null,
-      transcript: '',
+      transcript: [],
       status: null,
       inputType: null,
       saves: [],
@@ -223,7 +224,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
             stripHistoryReplay(pendingResponseChunks.join('')),
             get().transcript.length === 0,
           );
-          set((s) => ({ transcript: s.transcript + response }));
+          set((s) => ({ transcript: [...s.transcript, response] }));
           void appendTranscriptEntry(gameId, {
             turn: event.turn,
             command: pendingCommand ?? '',
@@ -249,25 +250,31 @@ export const useEngineStore = create<EngineState>((set, get) => ({
 
     engine.onNamedSavePrompt(async (kind) => {
       if (kind === 'save') {
-        const name = window.prompt('Save as:');
-        return name ? { name } : null;
+        const name = await useDialogStore.getState().ask({
+          kind: 'prompt',
+          title: 'Save game',
+          placeholder: 'Save name',
+        });
+        return name ? { name: name as string } : null;
       }
       const preselected = get().pendingRestoreName;
       set({ pendingRestoreName: null });
-      const chosen =
-        preselected ??
-        (() => {
-          const names = get().saves.map((s) => s.name);
-          if (names.length === 0) {
-            window.alert('No saved games yet.');
-            return null;
-          }
-          return window.prompt(`Restore which save?\n${names.join(', ')}`, names[0]);
-        })();
+      let chosen: string | null = preselected;
+      if (!chosen) {
+        const names = get().saves.map((s) => s.name);
+        if (names.length === 0) {
+          await useDialogStore.getState().ask({ kind: 'alert', title: 'No saved games yet.' });
+          chosen = null;
+        } else {
+          chosen = (await useDialogStore
+            .getState()
+            .ask({ kind: 'pick', title: 'Restore which save?', options: names })) as string | null;
+        }
+      }
       if (!chosen) return null;
       const bytes = await readSave(gameId, chosen);
       if (!bytes) {
-        window.alert(`No save named "${chosen}"`);
+        await useDialogStore.getState().ask({ kind: 'alert', title: `No save named "${chosen}"` });
         return null;
       }
       return { name: chosen, bytes };
@@ -299,11 +306,8 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     // it ever saw, autosave noise included).
     if (resuming) {
       const priorEntries = await getTranscript(gameId);
-      // No separator/prefix: each stored response already includes its own leading
-      // command echo and trailing input prompt (that's how Bocfel formats buffer
-      // output), so concatenating them bare reproduces live play exactly.
-      const rendered = priorEntries.map((e) => e.response).join('');
-      if (rendered) set({ transcript: rendered });
+      const rendered = priorEntries.map((e) => e.response).filter(Boolean);
+      if (rendered.length > 0) set({ transcript: rendered });
       resuming = false;
     }
 
@@ -319,7 +323,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     set({
       gameId: null,
       gameTitle: '',
-      transcript: '',
+      transcript: [],
       status: null,
       inputType: null,
       saves: [],

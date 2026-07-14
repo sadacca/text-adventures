@@ -35,14 +35,13 @@ describe('VerbChips', () => {
     expect(sendCommand).toHaveBeenCalledWith('look');
   });
 
-  it('inserts object verbs into the draft and requests focus instead of sending', () => {
+  it('inserts object verbs into the draft instead of sending', () => {
     const sendCommand = vi.fn();
     useEngineStore.setState({ inputType: 'line', sendCommand });
     render(<VerbChips />);
     fireEvent.click(screen.getByText('Take'));
     expect(sendCommand).not.toHaveBeenCalled();
     expect(useUiStore.getState().commandDraft).toBe('take');
-    expect(useUiStore.getState().focusRequestId).toBe(1);
   });
 
   it('disables all chips when the game is not awaiting line input', () => {
@@ -79,11 +78,10 @@ describe('CompassRose', () => {
 });
 
 describe('TapWords', () => {
-  it('appends a tapped word to the draft and requests focus', () => {
+  it('appends a tapped word to the draft', () => {
     render(<TapWords text="There is a brass lamp here." />);
     fireEvent.click(screen.getByText('lamp'));
     expect(useUiStore.getState().commandDraft).toBe('lamp');
-    expect(useUiStore.getState().focusRequestId).toBe(1);
   });
 
   it('composes a full command across a verb chip and a tapped word', () => {
@@ -98,6 +96,14 @@ describe('TapWords', () => {
     fireEvent.click(screen.getByText('Take'));
     fireEvent.click(screen.getByText('lamp'));
     expect(useUiStore.getState().commandDraft).toBe('take lamp');
+    expect(document.activeElement?.tagName).not.toBe('INPUT');
+  });
+
+  it('renders a command-echo line distinctly from game prose', () => {
+    render(<TapWords text={'> take lamp\nTaken.'} />);
+    const echo = screen.getByText((_, node) => node?.textContent === '> take lamp');
+    expect(echo).toHaveClass('story-echo');
+    expect(screen.getByText('Taken.')).not.toHaveClass('story-echo');
   });
 });
 
@@ -126,5 +132,19 @@ describe('CommandBar', () => {
     fireEvent.click(screen.getByLabelText('Command history'));
     fireEvent.click(screen.getByText('take lamp'));
     expect(useUiStore.getState().commandDraft).toBe('take lamp');
+  });
+
+  it('deletes the last word of the draft and hides itself once the draft is empty', () => {
+    useEngineStore.setState({ inputType: 'line', sendCommand: vi.fn() });
+    useUiStore.setState({ commandDraft: 'take brass lamp' });
+    render(<CommandBar />);
+    const deleteLastWord = screen.getByLabelText('Delete last word');
+    fireEvent.click(deleteLastWord);
+    expect(useUiStore.getState().commandDraft).toBe('take brass');
+    fireEvent.click(screen.getByLabelText('Delete last word'));
+    expect(useUiStore.getState().commandDraft).toBe('take');
+    fireEvent.click(screen.getByLabelText('Delete last word'));
+    expect(useUiStore.getState().commandDraft).toBe('');
+    expect(screen.queryByLabelText('Delete last word')).not.toBeInTheDocument();
   });
 });

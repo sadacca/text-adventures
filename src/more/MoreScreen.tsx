@@ -1,5 +1,6 @@
 import { useEngineStore } from '../state/engineStore';
 import { useUiStore, type UiState } from '../state/uiStore';
+import { useDialogStore } from '../state/dialogStore';
 import { useInstallStore } from '../state/installStore';
 import { deleteSave, exportSave, importSave } from '../storage/saves';
 import { AboutSection } from './AboutSection';
@@ -155,7 +156,13 @@ export function MoreScreen() {
   }
 
   async function onDelete(name: string) {
-    if (!window.confirm(`Delete save "${name}"?`)) return;
+    const confirmed = await useDialogStore.getState().ask({
+      kind: 'confirm',
+      title: `Delete save "${name}"?`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
     await deleteSave(gameId!, name);
     await refreshSaves();
   }

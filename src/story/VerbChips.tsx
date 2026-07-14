@@ -7,7 +7,6 @@ export function VerbChips() {
   const sendCommand = useEngineStore((s) => s.sendCommand);
   const inputType = useEngineStore((s) => s.inputType);
   const appendToDraft = useUiStore((s) => s.appendToDraft);
-  const requestInputFocus = useUiStore((s) => s.requestInputFocus);
 
   return (
     <div className="verb-chips" role="toolbar" aria-label="Common commands">
@@ -20,7 +19,6 @@ export function VerbChips() {
           onClick={() => {
             if (verb.needsObject) {
               appendToDraft(verb.command);
-              requestInputFocus();
             } else {
               sendCommand(verb.command);
             }

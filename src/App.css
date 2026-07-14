@@ -151,8 +151,18 @@
   overflow-y: auto;
   white-space: pre-wrap;
   word-wrap: break-word;
-  font-family: inherit;
   margin: 8px 0;
+  line-height: 1.7;
+}
+
+.story-block {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.story-echo {
+  color: var(--text-dim);
+  font-weight: 600;
 }
 
 .story-body {
@@ -161,11 +171,26 @@
   display: flex;
   gap: 6px;
   align-items: flex-end;
+  position: relative;
+}
+
+.new-text-pill {
+  position: absolute;
+  bottom: var(--space-2);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  box-shadow: var(--shadow-md);
 }
 
 .tap-word {
   cursor: pointer;
   border-radius: 3px;
+  padding: 1px 2px;
 }
 
 .tap-word:active {
@@ -703,7 +728,7 @@
   margin-top: 8px;
 }
 
-.room-edit-actions button {
+.room-edit-actions button:not(.btn-primary):not(.btn-danger) {
   padding: 0 16px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -713,4 +738,16 @@
 .room-edit-actions button.danger {
   color: var(--danger);
   border-color: var(--danger);
+}
+
+.room-edit-actions button.btn-primary,
+.room-edit-actions button.btn-danger {
+  padding: 0 16px;
+  border-radius: 6px;
+}
+
+.dialog-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
