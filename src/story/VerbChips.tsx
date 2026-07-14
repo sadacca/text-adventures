@@ -1,5 +1,6 @@
 import { useEngineStore } from '../state/engineStore';
 import { useUiStore } from '../state/uiStore';
+import { haptic } from '../haptics';
 import { VERBS } from './verbs';
 
 /** Task 1.7: one scrollable row of common commands. */
@@ -17,6 +18,7 @@ export function VerbChips() {
           className="chip tap-target"
           disabled={inputType !== 'line'}
           onClick={() => {
+            haptic();
             if (verb.needsObject) {
               appendToDraft(verb.command);
             } else {

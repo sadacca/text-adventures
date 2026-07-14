@@ -153,6 +153,7 @@
   word-wrap: break-word;
   margin: 8px 0;
   line-height: 1.7;
+  font-family: var(--story-font, inherit);
 }
 
 .story-block {
@@ -169,8 +170,6 @@
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 6px;
-  align-items: flex-end;
   position: relative;
 }
 
@@ -219,20 +218,43 @@
   opacity: 0.5;
 }
 
+.exits-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  flex-shrink: 0;
+}
+
+.exits-row-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 /*
  * Compass rose: Task 1.7 wants it "persistent" and compact, which reads as a floating
- * corner FAB — but docking it as its own flex column (sibling of the transcript, via
- * `.story-body`'s flexbox) instead of `position: absolute` over the text turned out to
- * matter functionally, not just stylistically: an absolutely-positioned overlay's whole
- * rectangular box intercepts pointer events even where visually just background, which
- * silently ate taps on any tap-word text that scrolled underneath its corner — found by
- * a Playwright pass driving both features together. Docking it in the flex flow instead
- * reserves real layout space, so it can never sit on top of tappable text.
+ * corner FAB — but docking it in normal flow instead of `position: absolute` over the
+ * text turned out to matter functionally, not just stylistically: an absolutely-
+ * positioned overlay's whole rectangular box intercepts pointer events even where
+ * visually just background, which silently ate taps on any tap-word text that scrolled
+ * underneath its corner — found by a Playwright pass driving both features together.
+ * Docking it in the flex flow instead reserves real layout space, so it can never sit
+ * on top of tappable text.
+ *
+ * UX-7 (2026-07-14): originally a sibling of the transcript inside `.story-body`'s flex
+ * row, stealing ~180px of a 390px-wide phone screen from reading width when expanded.
+ * Moved below the transcript instead, as its own row in `.story-screen`'s column flex
+ * (`align-self: flex-end` keeps it docked to the right edge) — it now costs vertical
+ * space instead of horizontal, which reading width wins.
  */
 .compass-fab {
+  align-self: flex-end;
   flex-shrink: 0;
   width: 48px;
   height: 48px;
+  margin: var(--space-1) 0;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
@@ -242,10 +264,12 @@
 
 .compass-rose {
   position: relative;
+  align-self: flex-end;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: var(--space-1) 0;
   padding: 10px;
   border-radius: 12px;
   background: var(--bg-elevated);

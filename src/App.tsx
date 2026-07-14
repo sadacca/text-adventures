@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useUiStore, type Tab } from './state/uiStore';
 import { attachInstallListeners } from './state/installStore';
+import { attachBackHandler } from './state/backButton';
 import { LibraryScreen } from './library/LibraryScreen';
 import { StoryScreen } from './story/StoryScreen';
 import { MapScreen } from './map/MapScreen';
@@ -20,12 +21,17 @@ function App() {
   const setTab = useUiStore((s) => s.setTab);
   const theme = useUiStore((s) => s.theme);
   const fontScale = useUiStore((s) => s.fontScale);
+  const storyFont = useUiStore((s) => s.storyFont);
 
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', theme);
 
+    if (theme === 'retro') {
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#0d0d0d');
+      return;
+    }
     const isDark =
       theme === 'dark' ||
       (theme === 'system' &&
@@ -40,9 +46,23 @@ function App() {
     document.documentElement.style.fontSize = `${16 * fontScale}px`;
   }, [fontScale]);
 
+  useEffect(() => {
+    const value =
+      storyFont === 'serif'
+        ? 'Georgia, "Times New Roman", serif'
+        : storyFont === 'mono'
+          ? 'ui-monospace, Menlo, Consolas, monospace'
+          : 'inherit';
+    document.documentElement.style.setProperty('--story-font', value);
+  }, [storyFont]);
+
   // Registered once at the top level: beforeinstallprompt can fire before any
   // particular tab is mounted, and Chrome only ever dispatches it once per load.
   useEffect(() => attachInstallListeners(), []);
+
+  // Registered once at the top level: traps a single history entry so Android's system
+  // Back always closes the topmost sheet/tab first instead of exiting the installed PWA.
+  useEffect(() => attachBackHandler(), []);
 
   return (
     <div className="app-shell">

@@ -198,6 +198,7 @@ Restart flow: confirm dialog → delete `autosaves`, `maps`, `transcripts` rows 
 | `CommandBar` | `story/CommandBar.tsx` | input field (soft-keyboard attrs per Task 1.7), send button, history swipe |
 | `VerbChips` | `story/VerbChips.tsx` | one scrollable row; config in `story/verbs.ts` |
 | `CompassRose` | `story/CompassRose.tsx` | collapsed 48px fab → expanded 3×3 + U/D/IN/OUT; known exits highlighted (subscribes to MapGraph) |
+| `ExitsRow` | `story/ExitsRow.tsx` | (2026-07-14, UX-6) row of confirmed-exit chips below the status line, sharing `useKnownExits()` with `CompassRose` |
 | `TapWords` | `story/TapWords.tsx` | wraps buffer text; word-tap appends to CommandBar draft |
 | `MapScreen` | `map/MapScreen.tsx` | SVG canvas, pan/pinch (Pointer Events), selection |
 | `RoomEditSheet` | `map/RoomEditSheet.tsx` | long-press bottom sheet: rename/note/merge/delete |

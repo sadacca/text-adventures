@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import { useMapStore } from '../state/mapStore';
 import { useDialogStore } from '../state/dialogStore';
+import { useUiStore } from '../state/uiStore';
 import { computePath, isLongTrip } from './travel';
 import type { MapGraph, RoomEdge, RoomNode } from './graph';
 import { isCompassDirection, isStubDirection } from './directions';
 import { RoomEditSheet } from './RoomEditSheet';
+import { haptic } from '../haptics';
 
 const UNIT = 110; // px per grid cell
 const ROOM_W = 92;
@@ -109,7 +111,8 @@ export function MapScreen() {
 
   const [viewBox, setViewBox] = useState<ViewBox | null>(null);
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const editingRoomId = useUiStore((s) => s.roomEditTarget);
+  const setEditingRoomId = useUiStore((s) => s.setRoomEditTarget);
   const [toast, setToast] = useState<string | null>(null);
   const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null);
 
@@ -277,9 +280,14 @@ export function MapScreen() {
       if (!proceed) return;
     }
     const result = await travelTo(path);
-    if (result === 'blocked') setToast('Travel stopped — something unexpected happened.');
-    else if (result === 'question') setToast('Travel stopped — the game is asking a question.');
-    else if (result === 'char_input') setToast('Travel stopped — the game wants a keypress.');
+    if (result === 'completed') {
+      haptic(30);
+    } else {
+      haptic([30, 60, 30]);
+      if (result === 'blocked') setToast('Travel stopped — something unexpected happened.');
+      else if (result === 'question') setToast('Travel stopped — the game is asking a question.');
+      else if (result === 'char_input') setToast('Travel stopped — the game wants a keypress.');
+    }
   }
 
   if (!gameId) {

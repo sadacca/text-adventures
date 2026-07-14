@@ -3,6 +3,7 @@ import { useEngineStore } from '../state/engineStore';
 import { useUiStore } from '../state/uiStore';
 import { CommandBar } from './CommandBar';
 import { CompassRose } from './CompassRose';
+import { ExitsRow } from './ExitsRow';
 import { VerbChips } from './VerbChips';
 import { TapWords } from './TapWords';
 import { DebugConsole } from '../debug/DebugConsole';
@@ -92,6 +93,7 @@ export function StoryScreen() {
           <span>{status.right}</span>
         </div>
       )}
+      <ExitsRow />
       <div className="story-body">
         <div className="story-transcript" ref={scrollRef} onScroll={handleScroll}>
           {transcript.map((chunk, i) => (
@@ -103,8 +105,8 @@ export function StoryScreen() {
             ↓ New text
           </button>
         )}
-        <CompassRose />
       </div>
+      <CompassRose />
       <VerbChips />
       <CommandBar />
       {debugConsoleEnabled && <DebugConsole />}

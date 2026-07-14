@@ -9,6 +9,13 @@ const THEME_OPTIONS: { value: UiState['theme']; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
+  { value: 'retro', label: 'Retro' },
+];
+
+const STORY_FONT_OPTIONS: { value: UiState['storyFont']; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'serif', label: 'Serif' },
+  { value: 'mono', label: 'Mono' },
 ];
 
 const FONT_SCALE_MIN = 0.85;
@@ -37,6 +44,8 @@ export function MoreScreen() {
   const setTheme = useUiStore((s) => s.setTheme);
   const fontScale = useUiStore((s) => s.fontScale);
   const setFontScale = useUiStore((s) => s.setFontScale);
+  const storyFont = useUiStore((s) => s.storyFont);
+  const setStoryFont = useUiStore((s) => s.setStoryFont);
   const installPromptEvent = useInstallStore((s) => s.promptEvent);
   const installed = useInstallStore((s) => s.installed);
   const markInstalled = useInstallStore((s) => s.markInstalled);
@@ -93,6 +102,22 @@ export function MoreScreen() {
                 className={theme === opt.value ? 'active' : ''}
                 aria-pressed={theme === opt.value}
                 onClick={() => setTheme(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="settings-row">
+          <span className="settings-row-label">Story font</span>
+          <div className="segmented" role="group" aria-label="Story font">
+            {STORY_FONT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={storyFont === opt.value ? 'active' : ''}
+                aria-pressed={storyFont === opt.value}
+                onClick={() => setStoryFont(opt.value)}
               >
                 {opt.label}
               </button>

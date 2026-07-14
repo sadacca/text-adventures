@@ -49,6 +49,16 @@
   --accent-contrast: #0b1220;
 }
 
+:root[data-theme='retro'] {
+  --bg: #0d0d0d;
+  --bg-elevated: #161616;
+  --text: #33ff66;
+  --text-dim: #1d9944;
+  --border: #1d9944;
+  --accent: #ffbf00;
+  --accent-contrast: #0d0d0d;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --bg: #14161a;

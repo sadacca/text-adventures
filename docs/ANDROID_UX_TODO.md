@@ -394,6 +394,14 @@ Story, Back again to Library, Back again leaves the app; Back with the room-edit
 open closes only the sheet. Add no automated test (jsdom history semantics differ);
 instead leave a short manual-verification note in this file's task entry when done.
 
+Manual verification (2026-07-14, Playwright at 390×844 against `advent.z5`): Map →
+`page.goBack()` → Story → `page.goBack()` → Library, confirmed via the active tab-bar
+label after each Back. Long-pressed a room on the Map tab to open `RoomEditSheet`, then
+`page.goBack()`: the sheet closed (`.room-edit-sheet` count 0 → back to 1 entry) and the
+active tab stayed on Map, i.e. Back closed only the topmost sheet rather than navigating
+tabs. Dialog-sheet (UX-5) priority and the Library-tab exit case were verified by code
+reading of `backButton.ts`'s priority chain, not exercised live in this pass.
+
 ---
 
 ## Tier 3 — delight (do these only after all of Tier 1–2 are merged)

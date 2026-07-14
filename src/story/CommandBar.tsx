@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import { useUiStore } from '../state/uiStore';
 import { useKeyboardInset } from './useKeyboardInset';
+import { haptic } from '../haptics';
 
 const SWIPE_UP_THRESHOLD = 40; // px
 
@@ -30,6 +31,7 @@ export function CommandBar() {
   function submit() {
     const text = draft.trim();
     if (!text || inputType !== 'line') return;
+    haptic();
     sendCommand(text);
     pushCommandHistory(text);
     setDraft('');
