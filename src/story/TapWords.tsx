@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from 'react';
 import { useUiStore } from '../state/uiStore';
+import { haptic } from '../haptics';
 
 /** Strips leading/trailing punctuation so tapping "lantern." appends "lantern". */
 function cleanWord(token: string): string {
@@ -21,6 +22,7 @@ function renderLineTokens(
         key={`${keyPrefix}-${i}`}
         className="tap-word"
         onClick={() => {
+          haptic();
           appendToDraft(word.toLowerCase());
         }}
       >

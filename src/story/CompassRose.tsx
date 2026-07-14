@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import type { Direction } from '../map/graph';
 import { useKnownExits } from './useKnownExits';
+import { haptic } from '../haptics';
 
 /** Grid layout of the expanded compass; `null` cells are just spacers. */
 const LAYOUT: (Direction | null)[][] = [
@@ -38,6 +39,7 @@ export function CompassRose() {
   const knownExits = useKnownExits();
 
   function go(dir: Direction) {
+    haptic();
     sendCommand(dir);
   }
 

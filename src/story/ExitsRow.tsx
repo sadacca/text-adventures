@@ -1,6 +1,7 @@
 import { useEngineStore } from '../state/engineStore';
 import type { Direction } from '../map/graph';
 import { useKnownExits } from './useKnownExits';
+import { haptic } from '../haptics';
 
 const ORDER: Direction[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw', 'up', 'down', 'in', 'out'];
 
@@ -23,7 +24,10 @@ export function ExitsRow() {
           className="chip tap-target"
           aria-label={`Go ${dir}`}
           disabled={inputType !== 'line'}
-          onClick={() => sendCommand(dir)}
+          onClick={() => {
+            haptic();
+            sendCommand(dir);
+          }}
         >
           {dir.toUpperCase()}
         </button>

@@ -6,6 +6,7 @@ import { computePath, isLongTrip } from './travel';
 import type { MapGraph, RoomEdge, RoomNode } from './graph';
 import { isCompassDirection, isStubDirection } from './directions';
 import { RoomEditSheet } from './RoomEditSheet';
+import { haptic } from '../haptics';
 
 const UNIT = 110; // px per grid cell
 const ROOM_W = 92;
@@ -277,9 +278,14 @@ export function MapScreen() {
       if (!proceed) return;
     }
     const result = await travelTo(path);
-    if (result === 'blocked') setToast('Travel stopped — something unexpected happened.');
-    else if (result === 'question') setToast('Travel stopped — the game is asking a question.');
-    else if (result === 'char_input') setToast('Travel stopped — the game wants a keypress.');
+    if (result === 'completed') {
+      haptic(30);
+    } else {
+      haptic([30, 60, 30]);
+      if (result === 'blocked') setToast('Travel stopped — something unexpected happened.');
+      else if (result === 'question') setToast('Travel stopped — the game is asking a question.');
+      else if (result === 'char_input') setToast('Travel stopped — the game wants a keypress.');
+    }
   }
 
   if (!gameId) {
