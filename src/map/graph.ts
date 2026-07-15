@@ -141,6 +141,29 @@ function rememberDescription(room: RoomNode, description: string | null): RoomNo
 }
 
 /**
+ * A traversal just contradicted an already-CONFIRMED edge's target — e.g. `original`'s
+ * `w` was confirmed to lead to room A, but this turn it led to room B instead. That's
+ * strong evidence `original` was a text-ambiguous merge (two physically distinct rooms
+ * sharing one name+description, like Zork's several indistinguishable "dimly lit
+ * forest" rooms) rather than a genuinely rerouted exit: silently overwriting the
+ * confirmed edge would destroy a previously-good observation to make room for this new
+ * one, which is exactly the "the map gets overwritten" failure mode. Instead, split off
+ * a fresh sibling room for THIS turn's real origin and attach the new edge there,
+ * leaving `original`'s confirmed edges untouched. The clone inherits `original`'s name
+ * and `firstDescription` — they're known to share identical text (that's *why* the
+ * contradiction happened), so a later arrival with that same description can still
+ * land on either sibling via rule 6's reverse-edge tie-break, rather than only ever
+ * re-matching the original.
+ */
+function splitRoomForContradiction(graph: MapGraph, originalId: string): RoomNode {
+  const original = graph.rooms[originalId];
+  const existing = findRoomsByName(graph, original.name);
+  const clone = createRoom(graph, original.name, existing.length);
+  clone.firstDescription = original.firstDescription;
+  return clone;
+}
+
+/**
  * Resolves the room a player has just arrived at, applying rule 6's disambiguation for
  * duplicate display names (e.g. Zork's several "Forest" rooms), strongest signal first:
  *
@@ -149,15 +172,24 @@ function rememberDescription(room: RoomNode, description: string | null): RoomNo
  *    name, that's the room — retracing a known exit must never re-open disambiguation
  *    (reusing a same-named sibling here is what used to reroute confirmed edges).
  * 3. Description fingerprint (first sentence of the arrival paragraph, captured on first
- *    visits even in brief mode): a candidate whose stored `firstDescription` matches is
- *    the room; a candidate whose stored description *differs* cannot be it and is
- *    excluded. Candidates with no stored description stay eligible.
- * 4. Reverse-edge compatibility: prefer a candidate whose own reverse edge already
- *    points back to `fromId`; a candidate whose CONFIRMED reverse edge points elsewhere
- *    contradicts the geography and is excluded. An *inferred* reverse edge pointing
- *    elsewhere is no contradiction — it's an automapper guess, and asymmetric passages
- *    (Zork: Behind House -s-> South of House, whose own n is a boarded wall) make such
- *    guesses routinely wrong; vetoing on them used to split unique rooms into `#2`s.
+ *    visits even in brief mode): if the description matches exactly ONE existing
+ *    candidate's stored `firstDescription`, that candidate IS the room — full stop,
+ *    skipping step 4 entirely. Positive content identity beats a topological guess: Zork
+ *    has rooms reachable from several unrelated directions that don't correspond to each
+ *    other (mountains -n/-s/-w-> the same "dimly lit forest" room — the map's "passageway
+ *    returning to room of origin" symbol), so a *different* edge on the matched candidate
+ *    pointing elsewhere is not a contradiction, just an unrelated edge; treating it as one
+ *    used to split that single real room into spurious `#2`/`#3`/`#4` duplicates. If
+ *    several candidates share the identical description (genuinely indistinguishable
+ *    prose — Zork's own mini-maze), or none has a stored description yet, identity is
+ *    ambiguous and step 4 breaks the tie.
+ * 4. Reverse-edge compatibility (only reached when step 3 left >1 candidate, or none):
+ *    prefer a candidate whose own reverse edge already points back to `fromId`; a
+ *    candidate whose CONFIRMED reverse edge points elsewhere contradicts the geography
+ *    and is excluded. An *inferred* reverse edge pointing elsewhere is no contradiction —
+ *    it's an automapper guess, and asymmetric passages (Zork: Behind House -s-> South of
+ *    House, whose own n is a boarded wall) make such guesses routinely wrong; vetoing on
+ *    them used to split unique rooms into `#2`s.
  * 5. Nothing survives -> numbered duplicate (`name#2`, `#3`, ...).
  *
  * `fromId`/`compassDir` are null for teleports and the very first room of a game, where
@@ -191,6 +223,7 @@ function resolveRoomOnArrival(
     const matching = candidates.filter(
       (c) => c.firstDescription && descriptionKey(c.firstDescription) === key,
     );
+    if (matching.length === 1) return rememberDescription(matching[0], description);
     candidates = matching.length > 0 ? matching : candidates.filter((c) => !c.firstDescription);
   }
 
@@ -485,8 +518,13 @@ export class Automapper {
             maybeAddInferredReverse(this.graph, destRoom.id, from, opposite(compassDir!));
         }
       } else if (live.to !== destRoom.id) {
-        // rule 1's "upsert": a confirmed edge now leads somewhere else (rerouted exit)
-        live.to = destRoom.id;
+        // A CONFIRMED edge contradicted by fresh traversal: treat `from` as having been
+        // a text-ambiguous merge (see splitRoomForContradiction) rather than clobbering
+        // previously-confirmed data with this turn's differing destination.
+        const clone = splitRoomForContradiction(this.graph, from);
+        upsertEdge(this.graph, clone.id, dir, destRoom.id, 'confirmed');
+        if (compassDir != null && destRoom.id !== clone.id)
+          maybeAddInferredReverse(this.graph, destRoom.id, clone.id, opposite(compassDir));
       }
     }
 
