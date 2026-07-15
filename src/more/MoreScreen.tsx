@@ -153,7 +153,10 @@ export function MoreScreen() {
         <label className="settings-row">
           <span className="settings-row-label">
             Highlight known words
-            <span className="settings-row-hint">Bold the words this game understands</span>
+            <span className="settings-row-hint">
+              Bold the words this game understands. Tap any word to add it to your command,
+              hold to examine it.
+            </span>
           </span>
           <input
             type="checkbox"

@@ -24,6 +24,8 @@ export function StoryScreen() {
   const pinRequestId = useEngineStore((s) => s.pinRequestId);
   const scoreDelta = useEngineStore((s) => s.scoreDelta);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
+  const hasSeenTapHint = useUiStore((s) => s.hasSeenTapHint);
+  const dismissTapHint = useUiStore((s) => s.dismissTapHint);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
@@ -108,6 +110,14 @@ export function StoryScreen() {
         <div className="status-line">
           <span>{status.left}</span>
           <span>{status.right}</span>
+        </div>
+      )}
+      {!hasSeenTapHint && (
+        <div className="tap-hint-banner">
+          <span>Tap a word to add it to your command · hold a word to examine it</span>
+          <button type="button" className="tap-target" onClick={dismissTapHint}>
+            Got it
+          </button>
         </div>
       )}
       <ExitsRow />
