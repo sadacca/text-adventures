@@ -401,6 +401,90 @@ describe('rule 6: same name, contradictory geography', () => {
     });
   });
 
+  it('reuses a room reached via a convergent third direction that contradicts an unrelated reverse edge', () => {
+    // Zork: from "Mountains", n/s/w ALL loop back to the same "dimly lit forest" room
+    // (the map's "passageway returning to room of origin" symbol) — but that room's own
+    // 's' edge already confirms elsewhere (to a Clearing), from a totally unrelated
+    // entrance. A confirmed reverse edge on an UNRELATED direction must not veto an
+    // exact description match: the room's identity is settled by content, not topology.
+    const graph = createEmptyGraph();
+    graph.rooms['mountains'] = mkRoom('mountains', 'Forest');
+    graph.rooms['mountains'].firstDescription = 'The forest thins out, revealing mountains.';
+    graph.rooms['forest'] = mkRoom('forest', 'Forest');
+    graph.rooms['forest'].firstDescription = 'This is a dimly lit forest.';
+    graph.rooms['clearing'] = mkRoom('clearing', 'Clearing');
+    graph.edges.push(
+      { from: 'forest', to: 'mountains', dir: 'e', status: 'confirmed' },
+      { from: 'mountains', to: 'forest', dir: 'w', status: 'inferred' },
+      // forest's 's' is unrelated: a normal, previously-confirmed exit to Clearing.
+      { from: 'forest', to: 'clearing', dir: 's', status: 'confirmed' },
+    );
+    graph.currentRoomId = 'mountains';
+
+    const am = new Automapper(graph);
+    am.handleEvent(cmd('north', 1));
+    am.handleEvent(bufferText('Forest\nThis is a dimly lit forest.', 1));
+    am.handleEvent(status('Forest', 1));
+
+    expect(am.graph.currentRoomId).toBe('forest');
+    expect(Object.keys(am.graph.rooms)).not.toContain('forest#2');
+    expect(am.graph.edges).toContainEqual({
+      from: 'mountains',
+      to: 'forest',
+      dir: 'n',
+      status: 'confirmed',
+    });
+    // The unrelated, previously-confirmed edge is untouched.
+    expect(am.graph.edges).toContainEqual({
+      from: 'forest',
+      to: 'clearing',
+      dir: 's',
+      status: 'confirmed',
+    });
+  });
+
+  it('splits off a fresh room instead of overwriting a CONFIRMED edge that a merge contradicts', () => {
+    // Two physically distinct, textually-IDENTICAL "Forest" rooms (Zork's actual
+    // situation) get merged into one node the first time only one of them has been
+    // seen. That's unavoidable from text alone. But once the merged node's already-
+    // confirmed 'w' edge (established while really in physical instance A) gets
+    // contradicted by a later traversal from physical instance B, silently overwriting
+    // it would destroy correct data — instead a sibling room must be split off.
+    const am = new Automapper();
+    am.handleEvent(status('Path', 0));
+    am.handleEvent(cmd('east', 1));
+    am.handleEvent(bufferText('Forest\nThis is a dimly lit forest.', 1));
+    am.handleEvent(status('Forest', 1)); // physical instance A, merged into 'forest'
+    am.handleEvent(cmd('west', 2));
+    am.handleEvent(status('Path', 2)); // forest.w -> path, CONFIRMED
+
+    am.handleEvent(cmd('north', 3));
+    am.handleEvent(status('Clearing', 3));
+    am.handleEvent(cmd('south', 4));
+    // Arriving at physical instance B via an unrelated entrance — same text, so it
+    // merges into the same 'forest' node (unavoidable, no contradicting evidence yet).
+    am.handleEvent(bufferText('Forest\nThis is a dimly lit forest.', 4));
+    am.handleEvent(status('Forest', 4));
+
+    am.handleEvent(cmd('west', 5));
+    am.handleEvent(status('Sunny Glade', 5)); // instance B's real 'w' differs from instance A's
+
+    expect(am.graph.currentRoomId).toBe('sunny-glade');
+    // The original confirmed edge survives untouched.
+    expect(am.graph.edges).toContainEqual({
+      from: 'forest',
+      to: 'path',
+      dir: 'w',
+      status: 'confirmed',
+    });
+    // A sibling room was split off and carries the new, real edge instead.
+    const split = am.graph.edges.find(
+      (e) => e.dir === 'w' && e.to === 'sunny-glade' && e.from !== 'forest',
+    );
+    expect(split).toBeDefined();
+    expect(am.graph.rooms[split!.from]).toMatchObject({ name: 'Forest' });
+  });
+
   it('reuses the existing room when geography is still consistent', () => {
     const graph = createEmptyGraph();
     graph.rooms['start'] = mkRoom('start', 'Start');

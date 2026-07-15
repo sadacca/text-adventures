@@ -131,6 +131,11 @@ Given the `GameEvent` stream, on each `status_line` following a `command`:
 1. **Movement + room changed** → ensure destination room exists; upsert edge
    `(from, dir) → to` as `confirmed`; add reverse edge `(to, opposite) → from` as
    `inferred` unless an edge with that key already exists or is tombstoned.
+   (refined 2026-07-15 — see rule 6's second note below) "Upsert" no longer means
+   blindly overwriting an existing CONFIRMED edge's target on contradiction — that
+   almost always means `from` was a text-ambiguous merge of two distinct rooms, not a
+   real change in geography, so it splits off a fresh sibling room instead
+   (`splitRoomForContradiction`) rather than destroying the earlier, correct data.
 2. **Movement + room unchanged** → no edge (blocked). Do not create anything.
    (revised 2026-07-15 — see note below): "unchanged" means the status-line name is the
    same AND the turn's prose did not announce an arrival. Games re-print the destination
@@ -165,15 +170,25 @@ Given the `GameEvent` stream, on each `status_line` following a `command`:
    real room name reappears.
 6. **Same name, contradictory geography** (arriving via a direction that already maps
    elsewhere from the same origin — e.g. "Maze" rooms) → create `name#2`, `#3`, ….
-   (revised 2026-07-15 — see note below) Disambiguation order, strongest signal first:
-   merge/rename aliases (rule 7); the already-traversed forward edge `(from, dir)` when
-   its target has the arriving name (retracing a known exit never re-opens
+   (revised 2026-07-15, twice — see notes below) Disambiguation order, strongest signal
+   first: merge/rename aliases (rule 7); the already-traversed forward edge `(from,
+   dir)` when its target has the arriving name (retracing a known exit never re-opens
    disambiguation); the room-description fingerprint (first sentence of the arrival
    paragraph, captured into `firstDescription` on first visit — printed even in brief
-   mode — matching fingerprint = same room, differing fingerprint = different room);
-   then reverse-edge compatibility, where only a CONFIRMED reverse edge pointing
-   elsewhere disqualifies a candidate — an *inferred* reverse edge is the automapper's
-   own guess and asymmetric exits routinely falsify it.
+   mode) — if it matches exactly ONE existing candidate, that candidate IS the room,
+   full stop, skipping straight past reverse-edge compatibility (a room reachable from
+   several unrelated directions, like Zork's Mountains whose n/s/w all loop back to one
+   "dimly lit forest" room, has no reason its *other*, unrelated edges should agree with
+   this arrival's direction — a confirmed content match outranks a topological guess);
+   only when the description is absent or shared by >1 candidate (genuinely
+   indistinguishable prose — e.g. Zork's own two identical "dimly lit forest" rooms)
+   does reverse-edge compatibility break the tie, where only a CONFIRMED reverse edge
+   pointing elsewhere disqualifies a candidate (an *inferred* reverse edge is the
+   automapper's own guess and asymmetric exits routinely falsify it). Whenever resolving
+   an arrival to an existing room would require silently overwriting an already-
+   CONFIRMED, unrelated edge on that room (evidence the room was actually a
+   text-ambiguous merge of two distinct physical rooms, not a real change of geography —
+   see rule 1's note), split off a fresh sibling instead of clobbering it.
 7. **User edits win, forever**: `posLocked` positions never re-laid-out; `userDeleted`
    edges never re-added; user-merged rooms keep a merge alias table so future arrivals
    at either name resolve to the merged node.
@@ -216,6 +231,43 @@ and Forest 3 also share an identical description and are only separable by geome
 like maze rooms. A possible future improvement is issuing a silent `verbose` at game
 start so every arrival is fingerprinted — deliberately NOT done, since it changes the
 player-visible transcript (an owner/product call).
+
+**2026-07-15 note, later same day (Zork 1 forest maze — rule 6 refined again, split-on-
+contradiction):** the note above undersold the problem — owner testing with the game's
+own official map (a hand-drawn reference showing four "Forest" boxes and a "passageway
+returning to room of origin" symbol) surfaced two more bugs, found by exhaustively
+DFS-probing the real interpreter (reboot + replay each path prefix from true game start,
+since this z-machine release has no `undo`) to build an independent, deterministic
+ground-truth transition table rather than trusting the hand-drawn map's exact routing:
+(a) a room reachable from **several unrelated directions that don't correspond to each
+other** (Zork: Mountains' `n`, `s`, AND `w` all loop back to the very same "dimly lit
+forest" room — confirmed live, not assumed, by cross-probing that every one of those
+three arrivals has an identical further-exit map) was still being split into spurious
+`#2`/`#3`/`#4` duplicates, because the previous "reverse-edge compatibility" step could
+still veto an exact `firstDescription` match: the matched room's reverse edge at
+`opposite(compassDir)` belonged to a *different, unrelated* entrance and pointed
+elsewhere, which was wrongly read as contradicting geography. Fixed: when the
+description fingerprint narrows candidates to exactly ONE, that candidate is the room,
+full stop — step 4 (reverse-edge tie-break) is skipped entirely, not just soft-preferred.
+Step 4 still runs when text is genuinely ambiguous (>1 candidate share the identical
+description, or none has one yet). (b) Once text-genuinely-indistinguishable rooms
+merge (Zork's two "dimly lit forest" rooms, confirmed via divergent live behavior to be
+physically distinct — no automapper can avoid this merge from prose alone), the merged
+node's own already-CONFIRMED edges would get silently overwritten the moment the
+*other* physical instance's real geography contradicted them — this is precisely the
+original bug report's "map gets overwritten in ways that are not quite right" on
+retracing. Fixed: `handleMovement` no longer clobbers a confirmed edge's target on
+contradiction (`splitRoomForContradiction`); instead it splits off a fresh sibling room
+(inheriting the shared name/description, so future arrivals can still land on either
+sibling via step 4's tie-break) and attaches the new edge there, leaving the original's
+confirmed data untouched. This trades perfect disambiguation (impossible here — even
+Zork's own official map's inconsistent Forest-box count suggests its human cartographer
+hit the same wall) for the one invariant that actually matters: previously-confirmed
+data is never silently destroyed. Live regression: `tests/zork-maze.test.ts` walks this
+exact maze adversarially and asserts no confirmed edge's target ever changes once set,
+plus that every genuinely-unique room (Forest Path, both Clearings, Behind House, South
+of House) resolves to exactly one node throughout. Synthetic unit coverage for both
+fixes lives in `tests/graph.test.ts` (rule 6 section).
 
 **2026-07-14 note (UX-18, Task 1.10's detection/diffing half):** `RoomNode` gained
 `mentionedDirections?: Direction[]` — the 8 unambiguous full compass words
