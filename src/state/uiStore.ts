@@ -18,6 +18,8 @@ export interface UiState {
   debugConsoleEnabled: boolean;
   /** Task 1.7: recent sent commands, newest first, for the history popover and "again". */
   commandHistory: string[];
+  /** UX-20: whether the player has dismissed the Story tab's tap/hold hint banner. */
+  hasSeenTapHint: boolean;
   /** UX-10: id of the room the long-press RoomEditSheet is open for, or null when
    *  closed. Lifted out of MapScreen's local state so the Android back-button trap
    *  (backButton.ts) can close it without React involvement. */
@@ -32,6 +34,7 @@ export interface UiState {
   setDebugConsoleEnabled: (enabled: boolean) => void;
   pushCommandHistory: (text: string) => void;
   setRoomEditTarget: (id: string | null) => void;
+  dismissTapHint: () => void;
 }
 
 /**
@@ -43,7 +46,7 @@ export interface UiState {
  */
 const persistOptions: PersistOptions<
   UiState,
-  Pick<UiState, 'theme' | 'fontScale' | 'storyFont' | 'highlightVocab'>
+  Pick<UiState, 'theme' | 'fontScale' | 'storyFont' | 'highlightVocab' | 'hasSeenTapHint'>
 > = {
   name: 'text-adventures-settings',
   version: 1,
@@ -52,6 +55,7 @@ const persistOptions: PersistOptions<
     fontScale: s.fontScale,
     storyFont: s.storyFont,
     highlightVocab: s.highlightVocab,
+    hasSeenTapHint: s.hasSeenTapHint,
   }),
 };
 
@@ -66,6 +70,7 @@ export const useUiStore = create<UiState>()(
       highlightVocab: true,
       debugConsoleEnabled: false,
       commandHistory: [],
+      hasSeenTapHint: false,
       roomEditTarget: null,
       setTab: (tab) => set({ tab }),
       setCommandDraft: (commandDraft) => set({ commandDraft }),
@@ -84,6 +89,7 @@ export const useUiStore = create<UiState>()(
           ),
         })),
       setRoomEditTarget: (roomEditTarget) => set({ roomEditTarget }),
+      dismissTapHint: () => set({ hasSeenTapHint: true }),
     }),
     persistOptions,
   ),
