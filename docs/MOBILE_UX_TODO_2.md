@@ -1016,6 +1016,208 @@ in every theme, exactly the "subtle" design intent.
 
 ---
 
+## Batch 4 — multi-level maps
+
+Source: owner design discussion 2026-07-16, following the forest-maze automapper fixes
+(SPECS.md §3's 2026-07-15/07-16 notes). Currently every room lands on one flat 2D plane;
+`up`/`down` edges just get a diagonal grid nudge (`directions.ts`'s `up`/`down` offsets,
+`layout.ts:34`) that visually tangles a basement's own geography with the ground floor's
+the moment either gets non-trivial. Split into two tasks: UX-20 is data-model-only (no
+visual change, safe to ship alone), UX-21 is the rendering/UI half that depends on it.
+
+### UX-20: Room floor field + auto-inference
+
+**Scope guard:** this task touches `src/map/graph.ts`, `src/state/mapStore.ts`, and
+`tests/graph.test.ts` only. No `layout.ts`/`MapScreen.tsx`/`RoomEditSheet.tsx` changes —
+that's UX-21. Floor assignment must NOT participate in `resolveRoomOnArrival`'s identity
+resolution (rule 6) — it's orthogonal metadata, written after a room's identity is
+already settled, same "small, additive, doesn't touch existing logic" discipline UX-18's
+`applyMentions` used for `mentionedDirections`.
+
+**1. Data model** (`graph.ts`'s `RoomNode` interface, alongside `mentionedDirections`):
+
+```ts
+/** Batch 4 / UX-20: which level this room is on, relative to the game's first room
+ *  (floor 0). undefined means "never assigned" — treat as 0 everywhere it's read.
+ *  Auto-inferred from up/down moves (see Automapper.applyFloor); sticky once set,
+ *  whether by inference or by the user (floorLocked), same as posLocked/rule 7. */
+floor?: number;
+/** True once a user edits floor directly (RoomEditSheet, UX-21) — the automapper must
+ *  never overwrite a floorLocked room's floor afterward. */
+floorLocked?: boolean;
+```
+
+**2. Auto-inference** (`Automapper.handleMovement`, after `destRoom` is resolved): if
+`compassDir` is exactly `'up'` or `'down'` (**not** `'in'`/`'out'` — deliberate scope
+decision: entering/leaving a structure doesn't reliably imply a level change in IF
+convention — Zork's own `in`/`out` of the house stay on the same floor; only `up`/`down`
+do), and `destRoom.floor === undefined` (never overwrite an already-assigned floor —
+whether it came from an earlier inference or a user edit; two staircases between the
+same two floors might disagree with a naive relative computation, and sticky-once-set is
+the same "never destroy established data" policy the contradiction-split logic already
+uses elsewhere in this file):
+
+```ts
+private applyFloor(fromId: string | null, compassDir: Direction | null, destRoom: RoomNode): void {
+  if (destRoom.floor !== undefined) return;
+  if (fromId == null) {
+    destRoom.floor = 0; // first room of the game, or a teleport with no origin
+    return;
+  }
+  if (compassDir !== 'up' && compassDir !== 'down') return;
+  const fromFloor = this.graph.rooms[fromId]?.floor ?? 0;
+  destRoom.floor = fromFloor + (compassDir === 'up' ? 1 : -1);
+}
+```
+
+Call it from `handleMovement` right after `destRoom` is resolved (before the
+edge-bookkeeping `if (from != null)` block, so it also runs for the true-teleport
+bootstrap path in `handleStatusLine` — call it there too, with `fromId=null`, so every
+room in the graph ends up with SOME floor value, never leaving a "hole" a later reader
+has to `?? 0`-guard against forever). Decide the exact call sites at implementation
+time; the acceptance tests below pin down the required behavior regardless of exactly
+where the call lives.
+
+**3. User override** (`graph.ts`, mirroring `moveRoom`'s exact shape):
+
+```ts
+/** Batch 4 / UX-21's RoomEditSheet field calls this. Locks the floor so the automapper
+ *  never re-infers over it (rule 7 — same contract as moveRoom/posLocked). */
+export function setRoomFloor(graph: MapGraph, id: string, floor: number): void {
+  const room = graph.rooms[id];
+  if (!room) return;
+  room.floor = floor;
+  room.floorLocked = true;
+}
+```
+
+`mapStore.ts` gains a `setRoomFloor(id, floor)` action calling this then `commit(set)`
+(no `computeLayout` call needed from this task — UX-21 decides if/when layout re-runs on
+a floor edit), mirroring the existing `moveRoom` action's exact shape.
+
+**4. Tests** (`tests/graph.test.ts`, new `describe('Batch 4: room floors', ...)`):
+- Fresh game: the first room gets `floor: 0`.
+- `up` from a floor-0 room → new room gets `floor: 1`; `down` from floor 0 → new room
+  gets `floor: -1`; a further `up` from THAT room gets `floor: 2`.
+- `in`/`out` never assign/change floor (explicit test — documents the scope decision).
+- An `up`/`down` arrival at an ALREADY floor-assigned room (existing room, matched via
+  rule 6) does NOT overwrite its floor, even when the naive relative computation would
+  disagree (simulate two convergent staircases giving conflicting answers).
+- `setRoomFloor` sets `floorLocked: true`; a subsequent auto-inference attempt on that
+  same room (another up/down arrival landing there) leaves both `floor` and
+  `floorLocked` untouched.
+- The "round-trips a graph through JSON" serialization test (existing, near the bottom
+  of the file) gains a room with `floor`/`floorLocked` set and asserts they survive.
+
+**Acceptance:** lint/tests/build pass. No behavioral or visual change to the map screen
+— `tests/layout.test.ts`, `tests/travelTo.test.ts`, and every MapScreen-adjacent test
+must pass completely unmodified, since nothing reads `RoomNode.floor` until UX-21.
+
+**5. Docs:** dated SPECS.md note under §1 (RoomNode shape) describing `floor`/
+`floorLocked` and the up/down-only, sticky-once-set inference rule.
+
+---
+
+### UX-21: Floor-aware map rendering + switcher UI [visual check]
+
+Depends on UX-20 shipping first. This is the rendering half — floors become visible and
+editable. **Scope guard:** do not change `graph.ts`'s floor *inference* logic here; this
+task only reads `RoomNode.floor`/`floorLocked`, plus adds the `RoomEditSheet` field that
+calls UX-20's `setRoomFloor`.
+
+**1. `layout.ts`:** `computeLayout(graph)` keeps its existing signature and every
+existing call site in `mapStore.ts` unchanged. Internally, refactor its current body
+into a private `layoutFloor(graph, roomsOnFloor, startId)` (same BFS/collision-avoidance
+algorithm as today, verbatim) and have the public `computeLayout` group
+`Object.values(graph.rooms)` by `room.floor ?? 0` first, then call `layoutFloor` once per
+distinct floor. Each floor's BFS start: `graph.currentRoomId`'s room if it belongs to
+that floor, else that floor's first `posLocked` room, else that floor's first room by
+insertion order (deterministic — matches the existing single-floor fallback's spirit).
+In `layoutFloor`'s neighbor walk (today's `neighborsOf`), only follow an edge if both
+endpoints are on the same floor (`(graph.rooms[edge.to].floor ?? 0) === (graph.rooms[edge.from].floor ?? 0)`)
+— a crossing edge is simply skipped during layout, never removed from `graph.edges`.
+Different floors reuse the same x/y coordinate space (e.g. floor 0 and floor 1 can both
+have a room at `{x:2,y:3}`) — harmless, since MapScreen (below) only ever renders one
+floor's rooms at a time, so two floors' positions are never compared or drawn together.
+
+**2. `uiStore.ts`:** add session-only state (NOT in `persistOptions` — same as
+`roomEditTarget`):
+```ts
+/** Batch 4 / UX-21: which floor MapScreen shows. null = auto-follow the current room's
+ *  floor; a number = the player manually switched and stays there until they tap back
+ *  to auto-follow or load a different game. */
+activeFloor: number | null;
+setActiveFloor: (floor: number | null) => void;
+```
+
+**3. `MapScreen.tsx`:**
+- `const floors = useMemo(() => [...new Set(rooms.map((r) => r.floor ?? 0))].sort((a, b) => a - b), [rooms]);`
+- `const currentFloor = roomsById.get(graph.currentRoomId ?? '')?.floor ?? 0;`
+- `const displayFloor = activeFloor ?? currentFloor;` (auto-follow falls out of this for
+  free — no extra effect needed: when the player moves to a new floor and `activeFloor`
+  is still `null`, `displayFloor` just recomputes on the next render.)
+- Filter `rooms` to `(r.floor ?? 0) === displayFloor` before computing `viewBox`/segments
+  — `fitViewBox`/`buildSegments` both already take a room/graph list, so this is a
+  filter at the call site, not a change to either function's signature.
+- Floor switcher: only rendered when `floors.length > 1`, placed in `.map-header`
+  alongside the existing "⤢ Fit" button. One tap-target chip per floor, sorted, labeled
+  "Ground" for floor 0, "+N" for positive floors, and the plain negative number (e.g.
+  "-1") for floors below ground; `aria-pressed` on the active one, `onClick={() =>
+  setActiveFloor(floor)}`.
+- A small "return to current floor" indicator/button, shown only when
+  `activeFloor !== null && activeFloor !== currentFloor`, calling
+  `setActiveFloor(null)` — same header row, mirrors the Fit button's placement/style.
+- Reset `activeFloor` to `null` whenever `gameId` changes (alongside the existing
+  re-fit-once-per-game effect at `MapScreen.tsx:136-142`) so switching games doesn't
+  strand the view on a stale floor number.
+
+**4. `buildSegments`:** split its output into the existing same-floor line segments
+(now naturally floor-scoped, since it only ever receives the pre-filtered room list) and
+a new list of cross-floor stubs: for each non-`userDeleted` edge whose `dir` is `up` or
+`down` (use `isStubDirection` plus a floor-mismatch check — `in`/`out` never cross floors
+per UX-20, so this reduces to up/down in practice) where `graph.rooms[edge.from].floor`
+differs from `graph.rooms[edge.to].floor`, and `edge.from` is on `displayFloor`: emit one
+stub per `(from-room, direction)` — if both a confirmed and inferred edge exist for the
+same room+direction, prefer confirmed (same tie-break `buildSegments` already applies to
+normal segments). Render each stub as a small pill/button at the source room's position
+(not a line stretching off toward an undrawn room), labeled `↑ +1`/`↓ −1` style (sign
+relative to `displayFloor`), `onClick` calls `setActiveFloor(otherFloor)`. Centering the
+view on the destination room after the switch is a nice-to-have, not required for
+acceptance.
+
+**5. `RoomEditSheet.tsx`:** add a "Floor" field below Note, same `<label
+className="room-edit-field">` pattern as Name/Note — a `<input type="number">` seeded
+from `room.floor ?? 0`, `onBlur` parses with `Number.parseInt` (ignore non-numeric input,
+same defensive style as Name's `.trim()` guard) and calls the new `setRoomFloor` action.
+
+**6. CSS (`App.css`):** new classes for the floor switcher chips and the edge stub pill
+— reuse existing `--space-*`/`--radius-*`/`--accent`/`--text-dim` tokens, no hard-coded
+colors (global working agreement #5). Check light/dark/retro (#6).
+
+**7. Docs:** dated SPECS.md note describing the floor-aware layout/rendering, and a
+"component inventory" line update for `MapScreen` mentioning the floor switcher.
+
+**8. Tests:**
+- `tests/layout.test.ts`: add a case with an `up` edge to a `floor: 1` room and assert
+  each floor's rooms independently satisfy whatever positioning invariants the existing
+  tests already check for a single floor (read the current test bodies first and mirror
+  their exact assertion style — don't invent a new style).
+- A `MapScreen`-rendering test (check first whether one already exists to extend, e.g.
+  in `tests/story-ui.test.tsx` or a dedicated file, and follow its existing rendering/
+  interaction-test setup): floor switcher absent with 1 floor, present with 2+; tapping
+  a floor chip changes which rooms render; the "return to current floor" control
+  appears/disappears correctly as `activeFloor` changes.
+
+**Acceptance:** lint/tests/build pass; live at 390×844 with the UX-17 sample game (Zork
+I) — going `u` from Forest Path (Up a Tree) is the easiest reachable up/down edge to
+verify against: confirm a floor switcher appears with 2 entries once both floors are
+explored, confirm the edge renders as a labeled stub/button rather than a line stretching
+off-canvas, confirm tapping it switches floors, confirm the RoomEditSheet's new Floor
+field edits persist across reload (IndexedDB round-trip via the existing `saveMap`
+debounce). Check chip/pill legibility in light, dark, and retro themes.
+
+---
+
 ## Appendix — candidates reviewed but NOT approved for implementation
 
 Sketches for the owner's next review. **Do NOT implement anything below** — listed so
