@@ -16,6 +16,15 @@ export interface RoomNode {
   /** UX-18 / Task 1.10: compass directions seen mentioned in this room's prose that have
    *  no confirmed edge (yet). A soft suggestion, never map-affecting — see mentions.ts. */
   mentionedDirections?: Direction[];
+  /**
+   * Compass directions where a move was attempted from this room and blocked (rule 2:
+   * no edge is created). Never affects edges/routing — a passive-only fingerprint,
+   * exactly like `mentionedDirections` — but rule 6's disambiguation uses it to widen a
+   * candidate's known signature beyond just its recorded edges: a room can't be BOTH
+   * "confirmed to move east" and "blocked going east", so either signal contradicting
+   * the other is evidence of a text-ambiguous merge (see resolveRoomOnArrival).
+   */
+  blockedDirections?: Direction[];
 }
 
 export interface RoomEdge {
@@ -164,6 +173,39 @@ function splitRoomForContradiction(graph: MapGraph, originalId: string): RoomNod
 }
 
 /**
+ * Used whenever `room`'s own recorded signature (a CONFIRMED edge, or a recorded
+ * blocked direction) contradicts a fresh observation in `dir` — the destination is
+ * `expectedTo`, or `null` for "this direction just turned out to be blocked". Rather
+ * than always minting a brand-new sibling via `splitRoomForContradiction` (which would
+ * mint a FRESH duplicate every single time the same real physical room gets revisited
+ * and re-contradicts `room` the same way — e.g. bouncing off the same wall from the
+ * same merged node repeatedly used to produce a new `#N` on every bounce), first look
+ * for an EXISTING same-named, same-description sibling (typically one split off by an
+ * earlier contradiction) that isn't itself contradicted by this same observation.
+ * Reusing that sibling is what lets repeated visits to one real physical room converge
+ * onto a single node instead of scattering across an ever-growing set of duplicates.
+ */
+function findCompatibleSiblingOrSplit(
+  graph: MapGraph,
+  room: RoomNode,
+  dir: Direction | string,
+  expectedTo: string | null,
+): RoomNode {
+  const sameFamily = findRoomsByName(graph, room.name).filter(
+    (r) => r.id !== room.id && r.firstDescription === room.firstDescription,
+  );
+  const compatible = sameFamily.find((sibling) => {
+    const edge = liveEdgeAt(graph, sibling.id, dir);
+    if (edge?.status === 'confirmed') return edge.to === expectedTo;
+    if (expectedTo != null && isCompassDirection(dir) && sibling.blockedDirections?.includes(dir)) {
+      return false; // sibling is known-blocked here; a successful move contradicts that
+    }
+    return true;
+  });
+  return compatible ?? splitRoomForContradiction(graph, room.id);
+}
+
+/**
  * Resolves the room a player has just arrived at, applying rule 6's disambiguation for
  * duplicate display names (e.g. Zork's several "Forest" rooms), strongest signal first:
  *
@@ -183,14 +225,26 @@ function splitRoomForContradiction(graph: MapGraph, originalId: string): RoomNod
  *    several candidates share the identical description (genuinely indistinguishable
  *    prose — Zork's own mini-maze), or none has a stored description yet, identity is
  *    ambiguous and step 4 breaks the tie.
- * 4. Reverse-edge compatibility (only reached when step 3 left >1 candidate, or none):
- *    prefer a candidate whose own reverse edge already points back to `fromId`; a
- *    candidate whose CONFIRMED reverse edge points elsewhere contradicts the geography
- *    and is excluded. An *inferred* reverse edge pointing elsewhere is no contradiction —
- *    it's an automapper guess, and asymmetric passages (Zork: Behind House -s-> South of
- *    House, whose own n is a boarded wall) make such guesses routinely wrong; vetoing on
- *    them used to split unique rooms into `#2`s.
- * 5. Nothing survives -> numbered duplicate (`name#2`, `#3`, ...).
+ * 4. Hub preference (only reached when step 3 left >1 candidate, or none): if `fromId`
+ *    already has SOME confirmed edge to a candidate via a DIFFERENT direction, that
+ *    candidate is the room — checked BEFORE, and independent of, step 5's reverse-edge
+ *    check below, because that check assumes single-entrance reciprocity and is
+ *    actively wrong for a multi-entrance hub room (Zork: mountains' n/s/w all converge
+ *    on the one "dimly lit forest" room regardless of that room's own reverse-direction
+ *    state — which may well be blocked, as it genuinely is here — so gating hub
+ *    preference behind the reverse-edge check would let it veto the very candidates hub
+ *    preference exists to catch). A room `fromId` already confirms it connects to is far
+ *    more likely to be where a fresh, different direction from `fromId` also leads than
+ *    an as-yet-unconnected sibling is.
+ * 5. Reverse-edge compatibility: prefer a candidate whose own reverse edge already
+ *    points back to `fromId`; a candidate whose CONFIRMED reverse edge points elsewhere,
+ *    OR whose recorded `blockedDirections` contains the reverse direction (a room can't
+ *    simultaneously be "confirmed passable" and "confirmed blocked" the same way),
+ *    contradicts the geography and is excluded. An *inferred* reverse edge pointing
+ *    elsewhere is no contradiction — it's an automapper guess, and asymmetric passages
+ *    (Zork: Behind House -s-> South of House, whose own n is a boarded wall) make such
+ *    guesses routinely wrong; vetoing on them used to split unique rooms into `#2`s.
+ * 6. Nothing survives -> numbered duplicate (`name#2`, `#3`, ...).
  *
  * `fromId`/`compassDir` are null for teleports and the very first room of a game, where
  * there's no directional edge to check compatibility against.
@@ -229,6 +283,21 @@ function resolveRoomOnArrival(
 
   if (fromId != null && compassDir != null) {
     const oppDir = opposite(compassDir);
+    // Hub preference (checked first, independent of reverse-edge contradiction below):
+    // if `fromId` already has SOME confirmed edge to a candidate via a DIFFERENT
+    // direction, that beats the reverse-edge heuristic entirely — that heuristic
+    // assumes single-entrance reciprocity and is actively wrong for a multi-entrance
+    // hub room (Zork: mountains' n/s/w all converge on the one "dimly lit forest" room
+    // regardless of ITS reverse-direction state, which may well be blocked, as it
+    // genuinely is here). A room `fromId` already confirms it connects to is far more
+    // likely to be where a fresh, different direction from `fromId` also leads.
+    const hubMatch = candidates.find((c) =>
+      graph.edges.some(
+        (e) => e.from === fromId && e.to === c.id && e.status === 'confirmed' && !e.userDeleted,
+      ),
+    );
+    if (hubMatch) return rememberDescription(hubMatch, description);
+
     let uncontradicted: RoomNode | null = null;
     for (const candidate of candidates) {
       const reverseEdge = graph.edges.find(
@@ -237,8 +306,9 @@ function resolveRoomOnArrival(
       if (reverseEdge && reverseEdge.to === fromId) {
         return rememberDescription(candidate, description);
       }
-      const contradicted = reverseEdge?.status === 'confirmed' && reverseEdge.to !== fromId;
-      if (!contradicted && !uncontradicted) uncontradicted = candidate;
+      const edgeContradicted = reverseEdge?.status === 'confirmed' && reverseEdge.to !== fromId;
+      const blockedContradicted = candidate.blockedDirections?.includes(oppDir) ?? false;
+      if (!edgeContradicted && !blockedContradicted && !uncontradicted) uncontradicted = candidate;
     }
     if (uncontradicted) return rememberDescription(uncontradicted, description);
   } else if (candidates.length > 0) {
@@ -416,6 +486,32 @@ export class Automapper {
     room.mentionedDirections = ALL_DIRECTIONS.filter((d) => merged.has(d));
   }
 
+  /**
+   * Rule 2 (widened): a blocked move creates no edge, but is still free, passive
+   * evidence for rule 6's fingerprint — record the direction on the current room's
+   * `blockedDirections`. If that room already has a CONFIRMED edge in this exact
+   * direction, the two observations directly contradict each other (a room can't be
+   * both "confirmed passable going X" and "just blocked going X"), which is the same
+   * text-ambiguous-merge signal `findCompatibleSiblingOrSplit` already handles for
+   * successful moves — reattach `currentRoomId` to a compatible sibling (or split off a
+   * fresh one) rather than recording a self-contradictory blockage on the wrongly-merged
+   * node.
+   */
+  private handleBlockedMove(dir: Direction): void {
+    const id = this.graph.currentRoomId;
+    if (!id || id === UNKNOWN_ROOM_ID) return;
+    let room = this.graph.rooms[id];
+    if (!room) return;
+
+    if (liveEdgeAt(this.graph, id, dir)?.status === 'confirmed') {
+      room = findCompatibleSiblingOrSplit(this.graph, room, dir, null);
+      this.graph.currentRoomId = room.id;
+    }
+
+    const merged = new Set([...(room.blockedDirections ?? []), dir]);
+    room.blockedDirections = ALL_DIRECTIONS.filter((d) => merged.has(d));
+  }
+
   private handleStatusLine(rawLeft: string, turnText: string): void {
     const pending = this.pending;
     this.pending = { kind: 'other', label: '' };
@@ -440,7 +536,10 @@ export class Automapper {
     // moving between two same-named rooms from bouncing off a wall. Compass moves only:
     // non-move commands ("look", "examine") also re-print the title.
     const sameNameMove = sameAsCurrent && pending.kind === 'move' && arrival.announced;
-    if (sameAsCurrent && !sameNameMove) return; // blocked move (or repeated teleport/unknown)
+    if (sameAsCurrent && !sameNameMove) {
+      if (pending.kind === 'move') this.handleBlockedMove(pending.dir);
+      return; // blocked move (or repeated teleport/unknown)
+    }
 
     if (isUnknown) {
       // rule 5: dark room / unrecognized status -> shared singleton, no edges recorded
@@ -519,9 +618,14 @@ export class Automapper {
         }
       } else if (live.to !== destRoom.id) {
         // A CONFIRMED edge contradicted by fresh traversal: treat `from` as having been
-        // a text-ambiguous merge (see splitRoomForContradiction) rather than clobbering
-        // previously-confirmed data with this turn's differing destination.
-        const clone = splitRoomForContradiction(this.graph, from);
+        // a text-ambiguous merge (see findCompatibleSiblingOrSplit) rather than
+        // clobbering previously-confirmed data with this turn's differing destination.
+        const clone = findCompatibleSiblingOrSplit(
+          this.graph,
+          this.graph.rooms[from],
+          dir,
+          destRoom.id,
+        );
         upsertEdge(this.graph, clone.id, dir, destRoom.id, 'confirmed');
         if (compassDir != null && destRoom.id !== clone.id)
           maybeAddInferredReverse(this.graph, destRoom.id, clone.id, opposite(compassDir));
