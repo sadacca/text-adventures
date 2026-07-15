@@ -132,6 +132,13 @@ Given the `GameEvent` stream, on each `status_line` following a `command`:
    `(from, dir) → to` as `confirmed`; add reverse edge `(to, opposite) → from` as
    `inferred` unless an edge with that key already exists or is tombstoned.
 2. **Movement + room unchanged** → no edge (blocked). Do not create anything.
+   (revised 2026-07-15 — see note below): "unchanged" means the status-line name is the
+   same AND the turn's prose did not announce an arrival. Games re-print the destination
+   room's title line on every successful move, so a compass move whose prose contains a
+   line equal to the (unchanged) status-line name is a REAL move between two same-named
+   rooms (Zork: "Forest" -east-> "Forest") — treat it as rule 1/6 movement, including
+   the possibility of a genuine self-loop (no inferred reverse is added for a
+   self-loop). Non-compass commands ("look") also re-print the title and stay no-ops.
 3. **Inferred edge later traversed** → promote to `confirmed`; if traversal lands in a
    DIFFERENT room than the inferred edge claimed (one-way passage), delete the inferred
    edge and create a confirmed edge to the actual destination.
@@ -158,6 +165,15 @@ Given the `GameEvent` stream, on each `status_line` following a `command`:
    real room name reappears.
 6. **Same name, contradictory geography** (arriving via a direction that already maps
    elsewhere from the same origin — e.g. "Maze" rooms) → create `name#2`, `#3`, ….
+   (revised 2026-07-15 — see note below) Disambiguation order, strongest signal first:
+   merge/rename aliases (rule 7); the already-traversed forward edge `(from, dir)` when
+   its target has the arriving name (retracing a known exit never re-opens
+   disambiguation); the room-description fingerprint (first sentence of the arrival
+   paragraph, captured into `firstDescription` on first visit — printed even in brief
+   mode — matching fingerprint = same room, differing fingerprint = different room);
+   then reverse-edge compatibility, where only a CONFIRMED reverse edge pointing
+   elsewhere disqualifies a candidate — an *inferred* reverse edge is the automapper's
+   own guess and asymmetric exits routinely falsify it.
 7. **User edits win, forever**: `posLocked` positions never re-laid-out; `userDeleted`
    edges never re-added; user-merged rooms keep a merge alias table so future arrivals
    at either name resolve to the merged node.
@@ -170,6 +186,36 @@ room reached ≠ expected next room, if any `buffer_text` contains a line ending
 (prompt/question), or if `input_requested.type === 'char'`. **Warn before long trips**:
 paths > 8 moves show a confirm ("uses N turns — lamp/hunger timers burn down"), because
 turns are a resource in many Infocom games.
+
+**2026-07-15 note (Zork 1 forest mapping — rules 2 & 6 revised, status_line
+turn-aligned):** real play in Zork 1's above-ground area (three rooms named "Forest",
+two named "Clearing", asymmetric exits around the house) exposed three automapper bugs:
+(a) same-named distinct rooms were conflated because rule 6's reverse-edge check treats
+"no reverse edge yet" as compatibility — the map ended up with one "Forest" node on
+BOTH sides of Forest Path, and every retrace then rerouted confirmed edges back and
+forth; (b) moves between two same-named rooms were dropped as rule-2 blocked moves;
+(c) unique rooms were split into spurious `#2`s because an *inferred* reverse edge
+pointing elsewhere was treated as contradicting geography (Behind House -s-> South of
+House, whose real `n` is a boarded wall). Fixes: rules 2 and 6 as revised above —
+arrival-announcement detection, `firstDescription` fingerprints (now actually populated
+by the Automapper from each turn's prose), forward-edge stickiness, and
+inferred-doesn't-veto. Alongside, `ProtocolTap` now emits `status_line` once per turn
+(from the input-request flush) instead of once per grid repaint: Bocfel can split
+mid-turn repaints across protocol updates non-deterministically, and a mid-turn repaint
+may still show the previous room, which corrupted the graph; deferring to end-of-turn
+also guarantees `buffer_text` always precedes its turn's `status_line`, which the
+description capture relies on. Live end-to-end regression: `tests/zork-automap.test.ts`
+boots the real bundled zork1.z3 on the real engine and checks both a deterministic
+forest/End-of-Rainbow walk against the game's true geography and a seeded 150-move
+random walk against description-fingerprint ground truth. Known accepted limitation:
+in brief mode a *revisit* to one of several same-named rooms arriving from a
+never-before-used direction prints no description, so disambiguation falls back to
+geometry and can still pick the wrong sibling (first visits are always fingerprinted —
+Infocom's brief mode prints full descriptions for never-visited rooms); Zork's Forest 2
+and Forest 3 also share an identical description and are only separable by geometry,
+like maze rooms. A possible future improvement is issuing a silent `verbose` at game
+start so every arrival is fingerprinted — deliberately NOT done, since it changes the
+player-visible transcript (an owner/product call).
 
 **2026-07-14 note (UX-18, Task 1.10's detection/diffing half):** `RoomNode` gained
 `mentionedDirections?: Direction[]` — the 8 unambiguous full compass words

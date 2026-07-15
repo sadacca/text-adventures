@@ -43,6 +43,7 @@ export class ProtocolTap {
   private inputWindowId: number | null = null;
   private inputType: 'line' | 'char' | null = null;
   private gridRows = new Map<number, Map<number, string>>();
+  private dirtyGrids = new Set<number>();
   private turn = 0;
   private silent = false;
   private readonly emit: (event: GameEvent) => void;
@@ -92,7 +93,10 @@ export class ProtocolTap {
     if (data.windows) this.updateWindows(data.windows);
     if (data.content) this.updateContent(data.content);
     if (data.input) this.updateInputs(data.input);
-    if (data.disable) this.emit({ kind: 'quit', turn: this.turn });
+    if (data.disable) {
+      this.flushStatusLines();
+      this.emit({ kind: 'quit', turn: this.turn });
+    }
   }
 
   private updateWindows(windows: protocol.WindowUpdate[]): void {
@@ -116,6 +120,16 @@ export class ProtocolTap {
     }
   }
 
+  /**
+   * Grid updates are only recorded here, not emitted: interpreters may repaint the
+   * status grid several times within one turn (and Bocfel's flushes can split those
+   * repaints across protocol updates non-deterministically), and a mid-turn repaint
+   * can still show the PREVIOUS room while the move's outcome is being printed. The
+   * one moment the grid is authoritative is when the interpreter asks for input again
+   * — so `flushStatusLines` emits a single end-of-turn `status_line` from
+   * `updateInputs`, which also guarantees consumers always see the turn's
+   * `buffer_text` before its `status_line`.
+   */
   private applyGridUpdate(update: protocol.GridWindowContentUpdate): void {
     let rows = this.gridRows.get(update.id);
     if (!rows || update.clear) {
@@ -125,17 +139,27 @@ export class ProtocolTap {
     for (const line of update.lines) {
       rows.set(line.line, run_text(line.content));
     }
-    const raw = [...rows.entries()].sort(([a], [b]) => a - b).map(([, text]) => [text]);
-    const first = raw[0]?.[0] ?? '';
-    // Classic Infocom status line: room name left-aligned, score/moves right-aligned,
-    // separated by a run of spaces.
-    const split = first.match(/^(.*?\S)? {2,}(\S.*)?$/);
-    const left = (split?.[1] ?? first).trim();
-    const right = (split?.[2] ?? '').trim();
-    this.emit({ kind: 'status_line', left, right, raw, turn: this.turn, silent: this.silent });
+    this.dirtyGrids.add(update.id);
+  }
+
+  private flushStatusLines(): void {
+    for (const id of [...this.dirtyGrids].sort((a, b) => a - b)) {
+      const rows = this.gridRows.get(id);
+      if (!rows) continue;
+      const raw = [...rows.entries()].sort(([a], [b]) => a - b).map(([, text]) => [text]);
+      const first = raw[0]?.[0] ?? '';
+      // Classic Infocom status line: room name left-aligned, score/moves right-aligned,
+      // separated by a run of spaces.
+      const split = first.match(/^(.*?\S)? {2,}(\S.*)?$/);
+      const left = (split?.[1] ?? first).trim();
+      const right = (split?.[2] ?? '').trim();
+      this.emit({ kind: 'status_line', left, right, raw, turn: this.turn, silent: this.silent });
+    }
+    this.dirtyGrids.clear();
   }
 
   private updateInputs(windows: protocol.InputUpdate[]): void {
+    this.flushStatusLines(); // turn is over: emit the final status grid state
     const active = windows.find((w) => w.type === 'line' || w.type === 'char');
     if (!active) {
       this.inputWindowId = null;
