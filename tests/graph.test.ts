@@ -83,6 +83,50 @@ describe('rule 2: blocked movement', () => {
     expect(am.graph.currentRoomId).toBe('kitchen');
     expect(Object.keys(am.graph.rooms)).toEqual(['kitchen']);
   });
+
+  it('stays a no-op when the failure prose does not announce an arrival', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Kitchen', 0));
+    am.handleEvent(cmd('north', 1));
+    am.handleEvent(bufferText("You can't go that way.", 1));
+    am.handleEvent(status('Kitchen', 1));
+
+    expect(am.graph.edges).toHaveLength(0);
+    expect(Object.keys(am.graph.rooms)).toEqual(['kitchen']);
+  });
+
+  it('treats a same-named status line as a real move when the prose re-prints the room title', () => {
+    // Zork: "Forest" -east-> a different room also named "Forest". The status line
+    // alone looks like a blocked move; the printed title line is what says otherwise.
+    const am = new Automapper();
+    am.handleEvent(bufferText('Forest\nThis is a dimly lit forest.', 0));
+    am.handleEvent(status('Forest', 0));
+    am.handleEvent(cmd('east', 1));
+    am.handleEvent(bufferText('Forest\nThe forest thins out, revealing mountains.', 1));
+    am.handleEvent(status('Forest', 1));
+
+    expect(am.graph.currentRoomId).toBe('forest#2');
+    expect(am.graph.edges).toContainEqual({
+      from: 'forest',
+      to: 'forest#2',
+      dir: 'e',
+      status: 'confirmed',
+    });
+  });
+
+  it('records a genuine self-loop exit (announced arrival, same description) without inferring a reverse', () => {
+    const am = new Automapper();
+    am.handleEvent(bufferText('Winding Path\nThe path twists back on itself.', 0));
+    am.handleEvent(status('Winding Path', 0));
+    am.handleEvent(cmd('north', 1));
+    am.handleEvent(bufferText('Winding Path\nThe path twists back on itself.', 1));
+    am.handleEvent(status('Winding Path', 1));
+
+    expect(am.graph.currentRoomId).toBe('winding-path');
+    expect(am.graph.edges).toEqual([
+      { from: 'winding-path', to: 'winding-path', dir: 'n', status: 'confirmed' },
+    ]);
+  });
 });
 
 describe('rule 3: inferred edges', () => {
@@ -242,6 +286,117 @@ describe('rule 6: same name, contradictory geography', () => {
       from: 'maze',
       to: 'passage',
       dir: 'e',
+      status: 'confirmed',
+    });
+  });
+
+  it('splits same-named rooms apart on first arrival when their descriptions differ', () => {
+    // Zork's Forest 1 (west of Forest Path) vs Forest 2 (east of it): same status-line
+    // name, different first-visit descriptions. The reverse-edge check alone can't tell
+    // them apart (Forest 1 has no 'w' edge yet), so the description has to.
+    const am = new Automapper();
+    am.handleEvent(bufferText('Forest Path\nA path winding through a dimly lit forest.', 0));
+    am.handleEvent(status('Forest Path', 0));
+    am.handleEvent(cmd('west', 1));
+    am.handleEvent(bufferText('Forest\nThis is a forest, with trees in all directions.', 1));
+    am.handleEvent(status('Forest', 1));
+    am.handleEvent(cmd('east', 2));
+    am.handleEvent(bufferText('Forest Path\nA path winding through a dimly lit forest.', 2));
+    am.handleEvent(status('Forest Path', 2));
+
+    am.handleEvent(cmd('east', 3));
+    am.handleEvent(bufferText('Forest\nThis is a dimly lit forest, with large trees.', 3));
+    am.handleEvent(status('Forest', 3));
+
+    expect(am.graph.currentRoomId).toBe('forest#2');
+    expect(am.graph.edges).toContainEqual({
+      from: 'forest-path',
+      to: 'forest#2',
+      dir: 'e',
+      status: 'confirmed',
+    });
+    // Forest 1 keeps its own geography untouched.
+    expect(am.graph.edges).toContainEqual({
+      from: 'forest-path',
+      to: 'forest',
+      dir: 'w',
+      status: 'confirmed',
+    });
+  });
+
+  it('reuses the same-named sibling whose description matches on a later arrival', () => {
+    const am = new Automapper();
+    am.handleEvent(bufferText('Hall\nA long hall.', 0));
+    am.handleEvent(status('Hall', 0));
+    am.handleEvent(cmd('west', 1));
+    am.handleEvent(bufferText('Forest\nA sunlit forest.', 1));
+    am.handleEvent(status('Forest', 1));
+    am.handleEvent(cmd('east', 2));
+    am.handleEvent(bufferText('Hall\nA long hall.', 2));
+    am.handleEvent(status('Hall', 2));
+    am.handleEvent(cmd('north', 3));
+    am.handleEvent(bufferText('Forest\nA gloomy forest.', 3)); // -> forest#2
+    am.handleEvent(status('Forest', 3));
+    am.handleEvent(cmd('south', 4));
+    am.handleEvent(bufferText('Hall\nA long hall.', 4));
+    am.handleEvent(status('Hall', 4));
+
+    // New approach from a fresh direction, but the description identifies forest#2.
+    am.handleEvent(cmd('northeast', 5));
+    am.handleEvent(bufferText('Forest\nA gloomy forest.', 5));
+    am.handleEvent(status('Forest', 5));
+
+    expect(am.graph.currentRoomId).toBe('forest#2');
+    expect(Object.keys(am.graph.rooms).filter((id) => id.startsWith('forest'))).toHaveLength(2);
+  });
+
+  it('sticks to the forward edge when retracing a known exit into a same-named room', () => {
+    const graph = createEmptyGraph();
+    graph.rooms['path'] = mkRoom('path', 'Path');
+    graph.rooms['forest'] = mkRoom('forest', 'Forest');
+    graph.rooms['forest#2'] = mkRoom('forest#2', 'Forest');
+    graph.edges.push(
+      { from: 'path', to: 'forest#2', dir: 'e', status: 'confirmed' },
+      { from: 'forest#2', to: 'path', dir: 'w', status: 'inferred' },
+    );
+    graph.currentRoomId = 'path';
+
+    const am = new Automapper(graph);
+    // 'forest' (no 'w' edge, so "compatible" by the reverse-edge check) must NOT steal
+    // this arrival: (path, e) is already confirmed to lead to forest#2.
+    am.handleEvent(cmd('east', 1));
+    am.handleEvent(status('Forest', 1));
+
+    expect(am.graph.currentRoomId).toBe('forest#2');
+    expect(am.graph.edges).toContainEqual({
+      from: 'path',
+      to: 'forest#2',
+      dir: 'e',
+      status: 'confirmed',
+    });
+  });
+
+  it('does not treat a contradicting INFERRED reverse edge as disqualifying (asymmetric exits)', () => {
+    // Zork: West of House -s-> South of House auto-infers "South of House -n-> West of
+    // House", but South of House's real north exit is a boarded wall. Arriving later
+    // via Behind House -s-> "South of House" must reuse the room, not mint a #2 —
+    // the inferred edge is a guess, not evidence.
+    const am = new Automapper();
+    am.handleEvent(status('West of House', 0));
+    am.handleEvent(cmd('south', 1));
+    am.handleEvent(status('South of House', 1));
+    am.handleEvent(cmd('east', 2));
+    am.handleEvent(status('Behind House', 2));
+
+    am.handleEvent(cmd('south', 3));
+    am.handleEvent(status('South of House', 3));
+
+    expect(am.graph.currentRoomId).toBe('south-of-house');
+    expect(Object.keys(am.graph.rooms)).not.toContain('south-of-house#2');
+    expect(am.graph.edges).toContainEqual({
+      from: 'behind-house',
+      to: 'south-of-house',
+      dir: 's',
       status: 'confirmed',
     });
   });
