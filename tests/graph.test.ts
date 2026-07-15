@@ -127,6 +127,73 @@ describe('rule 2: blocked movement', () => {
       { from: 'winding-path', to: 'winding-path', dir: 'n', status: 'confirmed' },
     ]);
   });
+
+  it('records a blocked compass direction on the current room as a passive fingerprint', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Kitchen', 0));
+    am.handleEvent(cmd('north', 1));
+    am.handleEvent(bufferText("You can't go that way.", 1));
+    am.handleEvent(status('Kitchen', 1));
+
+    expect(am.graph.rooms['kitchen'].blockedDirections).toEqual(['n']);
+    expect(am.graph.edges).toHaveLength(0); // still no edge — rule 2 stands
+  });
+
+  it('splits off a sibling when a blocked move contradicts an already-CONFIRMED edge', () => {
+    // A merged same-named room (see rule 6) already confirms 'e' works; a later visit
+    // to the OTHER real physical room finds 'e' blocked instead — direct contradiction.
+    const graph = createEmptyGraph();
+    graph.rooms['forest'] = mkRoom('forest', 'Forest');
+    graph.rooms['forest'].firstDescription = 'This is a dimly lit forest.';
+    graph.rooms['mountains'] = mkRoom('mountains', 'Mountains');
+    graph.edges.push({ from: 'forest', to: 'mountains', dir: 'e', status: 'confirmed' });
+    graph.currentRoomId = 'forest';
+
+    const am = new Automapper(graph);
+    am.handleEvent(cmd('east', 1));
+    am.handleEvent(bufferText("You can't go that way.", 1));
+    am.handleEvent(status('Forest', 1));
+
+    expect(am.graph.currentRoomId).not.toBe('forest');
+    const split = am.graph.rooms[am.graph.currentRoomId!];
+    expect(split).toMatchObject({ name: 'Forest', blockedDirections: ['e'] });
+    // The original's confirmed edge is untouched.
+    expect(am.graph.edges).toContainEqual({
+      from: 'forest',
+      to: 'mountains',
+      dir: 'e',
+      status: 'confirmed',
+    });
+  });
+
+  it('reuses the same split sibling on repeated visits instead of minting a new one each time', () => {
+    // The exact bug this guards: revisiting the SAME real physical room and
+    // re-triggering the SAME blocked-move contradiction used to mint a brand new `#N`
+    // duplicate every single time instead of converging on the sibling already split
+    // off for this situation.
+    const graph = createEmptyGraph();
+    graph.rooms['forest'] = mkRoom('forest', 'Forest');
+    graph.rooms['forest'].firstDescription = 'This is a dimly lit forest.';
+    graph.rooms['mountains'] = mkRoom('mountains', 'Mountains');
+    graph.edges.push({ from: 'forest', to: 'mountains', dir: 'e', status: 'confirmed' });
+    graph.currentRoomId = 'forest';
+
+    const am = new Automapper(graph);
+    am.handleEvent(cmd('east', 1));
+    am.handleEvent(bufferText("You can't go that way.", 1));
+    am.handleEvent(status('Forest', 1));
+    const firstSplitId = am.graph.currentRoomId;
+
+    // Leave and come back via a fresh, ambiguous arrival (no forward edge to stick to),
+    // then trigger the identical contradiction again.
+    am.graph.currentRoomId = 'forest';
+    am.handleEvent(cmd('east', 2));
+    am.handleEvent(bufferText("You can't go that way.", 2));
+    am.handleEvent(status('Forest', 2));
+
+    expect(am.graph.currentRoomId).toBe(firstSplitId);
+    expect(Object.keys(am.graph.rooms).filter((id) => id.startsWith('forest'))).toHaveLength(2);
+  });
 });
 
 describe('rule 3: inferred edges', () => {
@@ -483,6 +550,44 @@ describe('rule 6: same name, contradictory geography', () => {
     );
     expect(split).toBeDefined();
     expect(am.graph.rooms[split!.from]).toMatchObject({ name: 'Forest' });
+  });
+
+  it('hub preference: a room already confirmed-connected wins even when the reverse-edge check would exclude it', () => {
+    // Zork: mountains' n/s/w all converge on the SAME "dimly lit forest" room. By the
+    // time a second entrance direction is tried, several same-described siblings often
+    // already exist (from earlier, unrelated splits) — the reverse-edge heuristic alone
+    // would exclude the genuinely-correct one here, because ITS own reverse-in-that-
+    // direction is unrelated/blocked (a fact that's true and irrelevant, not a
+    // contradiction). A sibling `fromId` is already confirmed-connected to (via a
+    // DIFFERENT direction) must win regardless.
+    const graph = createEmptyGraph();
+    graph.rooms['mountains'] = mkRoom('mountains', 'Forest');
+    graph.rooms['mountains'].firstDescription = 'The forest thins out, revealing mountains.';
+    graph.rooms['forest'] = mkRoom('forest', 'Forest'); // the room mountains already connects to
+    graph.rooms['forest'].firstDescription = 'This is a dimly lit forest.';
+    graph.rooms['forest-2'] = mkRoom('forest-2', 'Forest'); // an unrelated same-described sibling
+    graph.rooms['forest-2'].firstDescription = 'This is a dimly lit forest.';
+    graph.edges.push({ from: 'mountains', to: 'forest', dir: 'w', status: 'confirmed' });
+    // forest's own 'n' is genuinely blocked in reality — recorded, but irrelevant to
+    // whether mountains' 's' ALSO leads to forest.
+    graph.rooms['forest'].blockedDirections = ['n'];
+    graph.currentRoomId = 'mountains';
+
+    const am = new Automapper(graph);
+    am.handleEvent(cmd('south', 1));
+    // Title reprinted but no description follows — a brief-mode revisit, so
+    // resolution must fall back past the (unavailable) description fingerprint to hub
+    // preference rather than the reverse-edge check.
+    am.handleEvent(bufferText('Forest\n>', 1));
+    am.handleEvent(status('Forest', 1));
+
+    expect(am.graph.currentRoomId).toBe('forest');
+    expect(am.graph.edges).toContainEqual({
+      from: 'mountains',
+      to: 'forest',
+      dir: 's',
+      status: 'confirmed',
+    });
   });
 
   it('reuses the existing room when geography is still consistent', () => {

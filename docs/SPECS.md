@@ -144,6 +144,13 @@ Given the `GameEvent` stream, on each `status_line` following a `command`:
    rooms (Zork: "Forest" -east-> "Forest") — treat it as rule 1/6 movement, including
    the possibility of a genuine self-loop (no inferred reverse is added for a
    self-loop). Non-compass commands ("look") also re-print the title and stay no-ops.
+   (revised 2026-07-16 — see note below) "Do not create anything" still means no edge,
+   but the blocked compass direction IS recorded on the current room's
+   `blockedDirections` (passive fingerprint only, exactly like `mentionedDirections` —
+   see rule 6). If the room already has a CONFIRMED edge in that exact direction, the
+   two observations directly contradict each other — the same text-ambiguous-merge
+   signal as rule 6's split-on-contradiction, handled the same way (`currentRoomId` is
+   corrected to a compatible sibling, or a fresh one; no edge is created either way).
 3. **Inferred edge later traversed** → promote to `confirmed`; if traversal lands in a
    DIFFERENT room than the inferred edge claimed (one-way passage), delete the inferred
    edge and create a confirmed edge to the actual destination.
@@ -170,25 +177,34 @@ Given the `GameEvent` stream, on each `status_line` following a `command`:
    real room name reappears.
 6. **Same name, contradictory geography** (arriving via a direction that already maps
    elsewhere from the same origin — e.g. "Maze" rooms) → create `name#2`, `#3`, ….
-   (revised 2026-07-15, twice — see notes below) Disambiguation order, strongest signal
-   first: merge/rename aliases (rule 7); the already-traversed forward edge `(from,
-   dir)` when its target has the arriving name (retracing a known exit never re-opens
-   disambiguation); the room-description fingerprint (first sentence of the arrival
-   paragraph, captured into `firstDescription` on first visit — printed even in brief
-   mode) — if it matches exactly ONE existing candidate, that candidate IS the room,
-   full stop, skipping straight past reverse-edge compatibility (a room reachable from
-   several unrelated directions, like Zork's Mountains whose n/s/w all loop back to one
-   "dimly lit forest" room, has no reason its *other*, unrelated edges should agree with
-   this arrival's direction — a confirmed content match outranks a topological guess);
-   only when the description is absent or shared by >1 candidate (genuinely
-   indistinguishable prose — e.g. Zork's own two identical "dimly lit forest" rooms)
-   does reverse-edge compatibility break the tie, where only a CONFIRMED reverse edge
-   pointing elsewhere disqualifies a candidate (an *inferred* reverse edge is the
-   automapper's own guess and asymmetric exits routinely falsify it). Whenever resolving
-   an arrival to an existing room would require silently overwriting an already-
-   CONFIRMED, unrelated edge on that room (evidence the room was actually a
-   text-ambiguous merge of two distinct physical rooms, not a real change of geography —
-   see rule 1's note), split off a fresh sibling instead of clobbering it.
+   (revised 2026-07-15 twice, 2026-07-16 — see notes below) Disambiguation order,
+   strongest signal first: merge/rename aliases (rule 7); the already-traversed forward
+   edge `(from, dir)` when its target has the arriving name (retracing a known exit
+   never re-opens disambiguation); the room-description fingerprint (first sentence of
+   the arrival paragraph, captured into `firstDescription` on first visit — printed even
+   in brief mode) — if it matches exactly ONE existing candidate, that candidate IS the
+   room, full stop, skipping straight past every check below (a confirmed content match
+   outranks a topological guess); **hub preference** — if `fromId` already has SOME
+   CONFIRMED edge to a candidate via a DIFFERENT direction, that candidate wins, checked
+   BEFORE and independent of reverse-edge compatibility below (a room reachable from
+   several unrelated directions, like Zork's Mountains whose n/s/w all converge on one
+   "dimly lit forest" room — the map's own "passageway returning to room of origin"
+   symbol — has no reason its *other*, unrelated edges should agree with this arrival's
+   direction, so gating hub preference behind that check would let it veto the very
+   candidate it exists to catch); only once both of those are exhausted does
+   reverse-edge compatibility break a remaining tie, where a candidate is excluded if
+   its CONFIRMED reverse edge points elsewhere, OR its recorded `blockedDirections`
+   contains the reverse direction (rule 2) — a room can't simultaneously be "confirmed
+   passable" and "confirmed blocked" the same way — while an *inferred* reverse edge
+   pointing elsewhere is no contradiction (it's the automapper's own guess, and
+   asymmetric exits routinely falsify it). Whenever resolving an arrival to an existing
+   room would require silently overwriting an already-CONFIRMED, unrelated edge on that
+   room (evidence of a text-ambiguous merge of two distinct physical rooms, not a real
+   change of geography — see rule 1's note), split off a sibling instead of clobbering
+   it — reusing an existing COMPATIBLE sibling (one whose own confirmed edges and
+   `blockedDirections` don't ALSO contradict this observation) if one already exists,
+   rather than always minting a brand new one (which used to spawn a fresh duplicate
+   every time the same real room re-triggered the same contradiction).
 7. **User edits win, forever**: `posLocked` positions never re-laid-out; `userDeleted`
    edges never re-added; user-merged rooms keep a merge alias table so future arrivals
    at either name resolve to the merged node.
@@ -231,6 +247,61 @@ and Forest 3 also share an identical description and are only separable by geome
 like maze rooms. A possible future improvement is issuing a silent `verbose` at game
 start so every arrival is fingerprinted — deliberately NOT done, since it changes the
 player-visible transcript (an owner/product call).
+
+**2026-07-16 note (Zork 1 forest maze, round 3 — blocked-direction fingerprinting, sibling
+reuse, hub preference):** owner asked for research into further-reducing occasional
+duplicate rooms on adversarial walks. Verified empirically first: even `look` in the
+game's two textually-identical "dimly lit forest" rooms produces byte-identical output —
+there is no passive signal left to exploit; this is an information-theoretic wall, not a
+heuristic-tuning gap (active exit-probing or item-drop fingerprinting, both a real
+behavioral/product change since the automapper would start sending commands the player
+didn't type, are the only ways to fully close it — not implemented, deliberately, pending
+a product decision). Chose to still implement the best available *passive* improvement:
+
+1. `RoomNode.blockedDirections?: Direction[]` — mirrors `mentionedDirections`, populated
+   whenever a compass move is genuinely blocked (rule 2). Never creates/touches edges.
+   Used to widen rule 6 step 5's contradiction check: a candidate whose recorded
+   `blockedDirections` contains the reverse direction is excluded exactly like a
+   contradicting CONFIRMED edge.
+2. A blocked move that contradicts an already-CONFIRMED edge in that exact direction
+   (rare but real: "confirmed passable going X" and "just blocked going X" can't both be
+   true of one room) now triggers the same identity-split machinery as a contradicted
+   successful move, correcting `currentRoomId` without creating any edge.
+3. **Found via stress-testing** (40 seeded 400-move random walks through the maze,
+   `Object.values(rooms).filter(name==='Forest').length` tracked as a duplicate-count
+   proxy): the split-on-contradiction logic from the previous round always minted a
+   BRAND NEW sibling on every contradiction, so the SAME real physical room bouncing off
+   the SAME wall repeatedly (or contradicting the SAME edge repeatedly) kept spawning a
+   fresh `#N` every time instead of converging — up to 8 spurious "Forest" nodes in one
+   400-move run. Fixed with `findCompatibleSiblingOrSplit`: before minting a new sibling,
+   search existing same-name/same-description siblings for one whose own recorded
+   signature (confirmed edges + blockedDirections) doesn't ALSO contradict this
+   observation; reuse it if found. Both `handleMovement`'s and the new blocked-move
+   contradiction path now go through this.
+4. **Found via the same stress-testing, then isolated with temporary trace
+   instrumentation**: even after (3), node count kept slowly climbing (up to 7 in 400
+   moves) because mountains' 3 independent entrances to the SAME room (n/s/w — the map's
+   "returning to origin" symbol) could each resolve to a DIFFERENT existing same-
+   described sibling, since step 5's reverse-edge/blocked-direction check has no reason
+   any two of those three unrelated entrances should agree, and (2)'s own widening
+   actively made this WORSE by excluding the genuinely-correct sibling (whose real
+   reverse direction happens to be blocked — true, but irrelevant to a convergent
+   entrance). Fixed by adding step 4, hub preference, checked BEFORE and independent of
+   the reverse-edge/blocked-direction contradiction check: if the origin already has some
+   OTHER confirmed edge to a candidate, prefer it outright.
+
+Net effect, same 40×400-move stress harness: worst-case spurious "Forest" nodes dropped
+from 8 to 6 (typically 4-6 against a true minimum of 4 real "Forest"-named physical
+rooms, one pair of which — forest2/forest3 — is genuinely text-indistinguishable and
+unavoidably produces at least one extra node). **The invariant that actually matters held
+perfectly across all 16,000 stress-tested moves: not one already-confirmed edge was ever
+silently rerouted.** Residual slow growth beyond the true minimum is the passive-
+observation ceiling described above, not a bug; closing it further needs option 1 (active
+exit-probing) or 2 (item-drop fingerprinting) from the research discussion, both deferred
+pending a product call on whether the automapper may act, not just observe. New unit
+tests in `tests/graph.test.ts` (rule 2 and rule 6 sections) cover blocked-direction
+recording, split-then-reuse (not re-split) on a repeated identical contradiction, and hub
+preference specifically overriding a blocked-direction exclusion.
 
 **2026-07-15 note, later same day (Zork 1 forest maze — rule 6 refined again, split-on-
 contradiction):** the note above undersold the problem — owner testing with the game's
