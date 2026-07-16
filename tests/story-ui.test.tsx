@@ -9,6 +9,7 @@ import { CompassRose } from '../src/story/CompassRose';
 import { ExitsRow } from '../src/story/ExitsRow';
 import { TapWords } from '../src/story/TapWords';
 import { CommandBar } from '../src/story/CommandBar';
+import { StoryScreen } from '../src/story/StoryScreen';
 
 const uiInitial = useUiStore.getState();
 const engineInitial = useEngineStore.getState();
@@ -349,5 +350,19 @@ describe('engineStore pinRequestId', () => {
     const before = useEngineStore.getState().pinRequestId;
     useEngineStore.getState().sendCommand('look');
     expect(useEngineStore.getState().pinRequestId).toBe(before + 1);
+  });
+});
+
+describe('StoryScreen status line', () => {
+  it('UX-22: renders an Undo button whenever status is set, wired to undoLastMove', () => {
+    const undoLastMove = vi.fn();
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 1' },
+      undoLastMove,
+    });
+    render(<StoryScreen />);
+    fireEvent.click(screen.getByLabelText('Undo last move'));
+    expect(undoLastMove).toHaveBeenCalled();
   });
 });

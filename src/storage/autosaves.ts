@@ -52,3 +52,22 @@ export async function getLatestAutosave(gameId: string): Promise<LatestAutosave 
     savedAt: latest.savedAt,
   };
 }
+
+/** UX-22: deletes the single newest autosave generation and returns the generation that
+ *  is now newest — i.e. the game state one move earlier — or null if there weren't at
+ *  least two generations to step back through (nothing to undo yet). */
+export async function stepBackAutosaveGeneration(gameId: string): Promise<LatestAutosave | null> {
+  const db = await getDb();
+  const existing = await generationsForGame(gameId);
+  if (existing.length < 2) return null;
+  const sorted = [...existing].sort((a, b) => b.generation - a.generation);
+  const newest = sorted[0];
+  const previous = sorted[1];
+  await db.delete('autosaves', [gameId, newest.generation]);
+  return {
+    snapshot: new Uint8Array(previous.snapshot),
+    turn: previous.turn,
+    generation: previous.generation,
+    savedAt: previous.savedAt,
+  };
+}

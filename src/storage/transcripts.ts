@@ -16,3 +16,16 @@ export async function getTranscript(gameId: string): Promise<TranscriptEntry[]> 
   const record = await db.get('transcripts', gameId);
   return record?.entries ?? [];
 }
+
+/** UX-22: drops every transcript entry for a turn after `turn` (kept: turn <= keepTurn).
+ *  Used when Undo rewinds the engine to an earlier autosave generation, so the
+ *  rebuilt-on-resume scrollback (engineStore.openGame) matches the rewound state instead
+ *  of still showing the undone move's response. */
+export async function trimTranscriptAfterTurn(gameId: string, keepTurn: number): Promise<void> {
+  const db = await getDb();
+  const existing = await db.get('transcripts', gameId);
+  if (!existing) return;
+  const trimmed = existing.entries.filter((e) => e.turn <= keepTurn);
+  if (trimmed.length === existing.entries.length) return;
+  await db.put('transcripts', { gameId, entries: trimmed });
+}

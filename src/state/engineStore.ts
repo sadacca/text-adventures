@@ -8,9 +8,17 @@ import {
   restartPlaythrough as storageRestartPlaythrough,
   touchLastPlayed,
 } from '../storage/games.js';
-import { getLatestAutosave, writeAutosaveGeneration } from '../storage/autosaves.js';
+import {
+  getLatestAutosave,
+  stepBackAutosaveGeneration,
+  writeAutosaveGeneration,
+} from '../storage/autosaves.js';
 import { listSaves, readSave, writeSave, type SaveSummary } from '../storage/saves.js';
-import { appendTranscriptEntry, getTranscript } from '../storage/transcripts.js';
+import {
+  appendTranscriptEntry,
+  getTranscript,
+  trimTranscriptAfterTurn,
+} from '../storage/transcripts.js';
 import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
 import { useMapStore } from './mapStore.js';
 import { useDialogStore } from './dialogStore.js';
@@ -108,6 +116,11 @@ interface EngineState {
   restoreNamed: (name: string) => void;
   refreshSaves: () => Promise<void>;
   restartPlaythrough: () => Promise<void>;
+  /** UX-22: rewinds to the autosave generation one move before the current one (see
+   *  storage/autosaves.ts's stepBackAutosaveGeneration) and reboots the engine against
+   *  it — the same teardown-and-reopen path restartPlaythrough uses, just without
+   *  wiping the playthrough. No-ops with an alert if there's nothing to step back to. */
+  undoLastMove: () => Promise<void>;
   /** Task 1.8 tap-to-travel: sends `path`'s moves one at a time, waiting for each
    *  resulting turn to fully settle before sending the next, and aborts immediately if
    *  a response deviates from what the map expects (SPECS.md §3): the room reached
@@ -407,6 +420,18 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     if (!gameId) return;
     teardownActiveSession();
     await storageRestartPlaythrough(gameId);
+    await get().openGame(gameId);
+  },
+
+  async undoLastMove() {
+    const { gameId } = get();
+    if (!gameId) return;
+    const previous = await stepBackAutosaveGeneration(gameId);
+    if (!previous) {
+      await useDialogStore.getState().ask({ kind: 'alert', title: 'Nothing to undo yet.' });
+      return;
+    }
+    await trimTranscriptAfterTurn(gameId, previous.turn);
     await get().openGame(gameId);
   },
 

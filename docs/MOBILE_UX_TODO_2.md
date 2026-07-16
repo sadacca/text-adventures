@@ -1466,6 +1466,33 @@ a fresh game boot (only one generation exists) — the "Nothing to undo yet." al
 appears and nothing else changes. Check the ↶ button's legibility/tap-target size in
 light, dark, and retro themes.
 
+**Outcome (2026-07-16): done, implemented exactly as specced.** `stepBackAutosaveGeneration`
+added to `src/storage/autosaves.ts` and `trimTranscriptAfterTurn` to
+`src/storage/transcripts.ts`, both verbatim. `engineStore.undoLastMove` calls them, then
+reboots through the existing `openGame` resume path — no `src/engine/` changes needed.
+`StoryScreen.tsx`'s status line converted from positional `:first-child`/`:last-child` CSS
+selectors to explicit `.status-line-room`/`.status-line-score` classes (verbatim rename,
+same declarations) so the new `.status-line-undo` button could be added as a third flex
+child without breaking the existing two. `npm run lint`/`npm test` (152 tests, up from
+145)/`npm run format`/`npm run build` all pass. New coverage: `tests/storage.test.ts`
+gained cases for both new storage functions (0/1/2+ generations; trim drops/keeps by turn;
+no-record no-op); a new `tests/undoLastMove.test.ts` (same `vi.hoisted` fake-`EngineHandle`
+pattern as `tests/autoResume.test.ts`) covers the full `undoLastMove()` flow (storage
+rewound, transcript trimmed, engine rebooted) and the "nothing to undo" alert path (via
+`useDialogStore`, asserting `createEngine` is never called); `tests/story-ui.test.tsx`
+gained a `StoryScreen` render case for the Undo button.
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`, real
+Chromium, against the bundled `zork1.z3`): from West of House, sent `north` twice (→
+Forest Path, Moves: 2), tapped ↶ — the status line and transcript rolled back in one step
+to North of House, Moves: 1, with the Forest Path move's transcript entry gone entirely
+(not just hidden). Reloaded the page: the resumed scrollback still showed North of
+House/Moves 1 — confirming `trimTranscriptAfterTurn` genuinely persisted, not just an
+in-memory rollback. Tapped ↶ twice more (down to a single remaining generation): the
+"Nothing to undo yet." alert appeared via the shared `DialogHost` (not `window.alert`) and
+nothing else changed. Screenshotted the ↶ button in light, dark, and retro themes — legible
+in all three (retro's green-on-black in particular).
+
 ### UX-23: Text styling passthrough (reverse video + emphasized)
 
 Z-machine games use `set_text_style` narratively, not just cosmetically (Trinity's
@@ -1592,6 +1619,54 @@ works exactly like an unstyled one, and reloading the page after such a passage 
 scrolled by shows it reverted to plain text (documented limitation, not a bug — confirm
 it doesn't crash or render mojibake, just plain text).
 
+**Outcome (2026-07-16): step 0 partially done — STOPPED before step 1, per this task's
+own rule not to ship a classifier built on guessed style names.** `ifarchive.org`/
+`mirror.ifarchive.org` repeat the same network-policy 403 UX-17/19 hit, exactly as this
+task's own notes anticipated — but unlike those tasks, a real, playable, reachable source
+WAS found this round: `historicalsource`'s Microsoft 2025 releases include a `COMPILED/`
+directory with a genuine Infocom-compiled story file per game (discovered via WebSearch,
+fetched over `raw.githubusercontent.com`, which — like `github.com`/`api.github.com`
+being blocked but the raw-content host working — matches UX-17's own precedent exactly).
+Verified real, byte-confirmed builds: Trinity (`historicalsource/trinity`,
+`COMPILED/tr.z4`, "Infocom (Z-machine 4, Release 15, Serial 870628)") and Bureaucracy
+(`historicalsource/bureaucracy`, `COMPILED/b.z4`, "Release 160, Serial 880521"). **Note
+for whoever picks this up: neither repo carries zork1's MIT `LICENSE` file — Trinity's own
+README states "It is not considered to be under an open license" — so unlike
+`public/advent.z5`/`public/zork1.z3`, these are NOT candidates for bundling/committing
+into this repo; they're fine to use as a local, uncommitted testing fixture only (not even
+as a `tests/fixtures/*.jsonl` capture that quotes long verbatim game text).**
+
+Used the app's own DebugConsole fixture recorder (real Playwright, 390×844,
+`npm run build && npm run preview`, uploaded via the ordinary Library file input) against
+Trinity's opening (Kensington Gardens) across ~20 turns (`look`, `wait`, `inventory`, and
+a spread of `examine`/`read` commands against the watch, umbrella, bench, gate, fence,
+statue, guidebook). Confirmed real, non-guessed facts: `TextRun.style` values actually
+emitted by this Bocfel/remglk-rs build are lowercase Glk style names — `'normal'`,
+`'subheader'` (room names, e.g. `"Palace Gate"`), and `'input'` (echoed commands) — and
+`css_styles` was an empty object on every single run captured, across both games. Did
+**not** observe `'emphasized'` or any reverse-video signal (`css_styles.reverse` or
+otherwise) — Trinity's dream-countdown sequences (the game's own flagship example of this
+feature) are deep in the plot and not reachable via generic exploration without walkthrough
+knowledge, and Bureaucracy's opening questionnaire didn't respond usefully to ordinary
+parser commands in the two-attempt budget spent here (its custom name/address entry flow
+needs its own investigation, not just `look`/`wait`).
+
+This is a materially stronger starting point than a blocked-network stop (two confirmed
+real style values, `css_styles`'s wire shape confirmed empty rather than assumed, and the
+naming convention — lowercase, `Style_` prefix stripped — solidly established from two
+independent examples), but it is still short of the two specific categories this task
+needs. Per the task's own instruction, the classifier in step 2 is **not written** —
+`'emphasized'` and reverse video's exact signal remain unconfirmed, and guessing them
+(even a well-motivated guess, like assuming `Style_Emphasized` → `'emphasized'` by pattern,
+or that `css_styles: {reverse: 1}` per `protocol.ts`'s own `CSSProperties` doc comment is
+how reverse video actually surfaces) is exactly what step 0 forbids. `TODO(owner):` next
+session should either (a) fetch a walkthrough for Trinity's early countdown-dream trigger
+or Bureaucracy's form-filling opening and drive the capture through it, or (b) source
+Sherlock or another italic-using game the same way (search `historicalsource/<slug>/tree/
+master/COMPILED` via WebFetch, then `raw.githubusercontent.com/<slug>/master/COMPILED/
+<file>` — the pattern that worked twice this round) and capture from its very opening if
+the italic text appears early there instead.
+
 ### UX-24: Timed input — surface interrupt/countdown text correctly
 
 The Z-machine's `read`/`read_char` opcodes support an optional timeout + interrupt
@@ -1686,6 +1761,72 @@ transcript at the correct point (not merged into a later unrelated turn, not mis
 and ordinary (non-timed) play in the same session is unaffected. If Phase 1 concluded
 the existing path already handles this correctly, the acceptance check is a live
 confirmation of that plus the fixture test, with no other code change needed.
+
+**Outcome (2026-07-16): done — Phase 1 found a real bug, not anticipated by either of
+this task's two sketched branches, and Phase 2 fixed it.** Sourced Border Zone the same
+way UX-23 sourced Trinity/Bureaucracy this round: `historicalsource/borderzone`'s
+`COMPILED/spy.z5` (its working title) over `raw.githubusercontent.com`, byte-confirmed
+"Infocom (Z-machine 5, Release 9, Serial 871008)" — the genuine commercial release
+(same not-under-an-open-license caveat as UX-23's finds: used locally for investigation
+only, never committed).
+
+Phase 1 (real Playwright, DebugConsole fixture recorder, chose Chapter 1 "The Train"):
+confirmed the low-level Glk timer mechanic genuinely fires end-to-end exactly as this
+task's own text predicted — `data.timer: 3000` arrives on the update following the
+scene's first `input_requested`, and once armed, the interpreter spontaneously pushes a
+fresh `input`-bearing update roughly every 3 seconds with zero player input, for as long
+as idled (5 consecutive ticks over 15s observed). This confirms the task's premise that
+"the low-level Glk timer mechanic is already fully implemented and running today... with
+zero code from this repo involved."
+
+But Phase 1 also found the actual bug, via the raw fixture, not a guess: `ProtocolTap`'s
+`silent` flag is set `true` by this app's own per-turn background autosave (dispatched
+right after every real turn) and is only ever cleared by the player's *next real* command
+— so every one of those spontaneously-arriving timer-tick updates inherited `silent: true`
+the entire time the player was idling (i.e. always, since the autosave fires every turn).
+Chapter 1's compartment scene didn't happen to print anything on those particular ticks
+(no `content` field on any of them in this capture), so nothing was visibly lost in this
+exact scene — but had it printed something (a countdown, "the phone rings", per this
+task's own examples), `engineStore`'s `isSilent` early-return would have dropped it
+**before it even reached `pendingResponseChunks`** — not delayed until the next turn as
+this task's Phase 2 sketch anticipated, genuinely and permanently lost.
+
+Phase 2 fix: `src/engine/protocol-tap.ts` gained `ProtocolTap.handleTimerTick()`, which
+resets `silent` to `false`; `src/engine/glkote-bridge.ts`'s `BridgeGlkOte` overrides
+asyncglk's `protected ontimer()` to call it — but only when `!this.waiting_for_update`
+(inherited `protected` from `GlkOteBase`), i.e. only when genuinely idle. That guard is
+the one subtlety: without it, a timer tick landing while a real request is still in
+flight (e.g. that same silent autosave's own SAVE round-trip, mid-transit) would
+incorrectly unmask its response as if it were visible content — traced through
+`GlkOteBase.send_event`'s own `waiting_for_update` no-op guard to confirm this is safe
+(a timer tick during an in-flight request just logs and no-ops on the base class's side,
+so skipping our reset in that case costs nothing). No `engineStore.ts` change was needed
+at all: a genuinely un-silenced timer-triggered `input_requested`/`buffer_text` now flows
+through the exact same commit path as any ordinary turn (mirroring UX-14's own char-input
+precedent for a non-`command`-triggered commit). `pinRequestId` re-pinning for an
+interrupt-originated commit and the `engine.ts` busy/queue interaction were both
+considered per this task's Phase 2 notes and found to need no change: `busy` is already
+false while genuinely idle, and the interpreter (synchronous WASM execution) can't
+process a real dispatched line and a timer tick concurrently, so no real queuing race is
+possible — left as an accepted, low-risk simplification rather than added complexity.
+
+`npm run lint`/`npm test` (155 tests, up from 152)/`npm run format`/`npm run build` all
+pass. New coverage: `tests/protocol-tap.test.ts` gained a `ProtocolTap.handleTimerTick`
+describe block (un-silences the next update; regression guard showing the same update
+stays silent without the tick) with a comment recording the live-capture finding above;
+new `tests/glkote-bridge.test.ts` covers the `!waiting_for_update` guard specifically
+(skips the reset with a request in flight, applies it once idle) since that's the one
+property that isn't visible at the `ProtocolTap` level alone.
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`,
+real Chromium, against the real Border Zone build): entered Chapter 1, sent `wait` once
+to arm the timer, then idled 15s and read DebugConsole's own `[silent]` tags directly.
+Before the fix (an earlier capture during Phase 1's investigation, same scene): every
+timer-triggered `input_requested (line)` in the idle window showed the `[silent]` suffix.
+After the fix, the identical scenario shows six consecutive timer-triggered
+`input_requested (line)` lines with **no** `[silent]` tag, immediately following the one
+legitimately-silent autosave entry that still correctly shows `[silent]` — confirming the
+fix un-silences exactly the intended events and nothing else.
 
 ---
 

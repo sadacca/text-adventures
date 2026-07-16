@@ -127,12 +127,20 @@
   margin-bottom: var(--space-2);
 }
 
-.status-line span:first-child {
+.status-line-room {
   font-weight: 600;
 }
 
-.status-line span:last-child {
+.status-line-score {
   color: var(--text-dim);
+}
+
+/* UX-22: undo button docked to the status line's right edge. margin-left: auto keeps
+ * the existing room/score spacing intact inside the flex row (space-between). */
+.status-line-undo {
+  margin-left: auto;
+  font-size: 1.1em;
+  line-height: 1;
 }
 
 /* UX-11 (revisit): a discreet score-increase callout — right-aligned under the status

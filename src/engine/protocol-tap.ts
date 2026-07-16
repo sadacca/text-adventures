@@ -71,6 +71,25 @@ export class ProtocolTap {
   }
 
   /**
+   * UX-24: called just before a Glk timer interrupt (`read`/`read_char`'s optional
+   * timeout, e.g. Border Zone's real-time scenes) reaches the interpreter. A timer tick
+   * only ever fires while the interpreter is genuinely idle, blocked on input — nothing
+   * of ours is "in flight" — so whatever it prints is spontaneous, player-facing content,
+   * never part of the causal chain of the last command we sent. Left unguarded, `silent`
+   * would still read `true` for a long stretch of ordinary idle play (the per-turn
+   * background autosave sets it and nothing clears it again until the player's next real
+   * command), so a timer-triggered `input_requested`/`buffer_text` would be silently
+   * dropped by every consumer's `isSilent` gate (see engineStore.ts) — not merely late,
+   * genuinely lost. Caller (`glkote-bridge.ts`) must only call this when no request is
+   * currently outstanding (its own `waiting_for_update` is false); otherwise this would
+   * incorrectly unmask a legitimate in-flight silent round-trip (e.g. the autosave's own
+   * SAVE command) the instant the interrupt coincidentally fires mid-flight.
+   */
+  handleTimerTick(): void {
+    this.silent = false;
+  }
+
+  /**
    * Call with every outgoing (UI -> interpreter) event, just before it's actually sent.
    * `silent` marks the engine's own background SAVE/RESTORE (Task 1.5) rather than
    * something the player typed or tapped; only meaningful for `line` events.
