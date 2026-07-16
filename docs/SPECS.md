@@ -413,6 +413,22 @@ back — a stray room/edge from the undone move stays in the graph, same as any 
 mis-inference the player would otherwise fix by hand (§3's "the automapper never undoes a
 manual change").
 
+**2026-07-16 note (UX-24):** confirmed via a real Border Zone (historicalsource, Release
+9/871008) capture that asyncglk's Glk timer loop (`GlkOteBase`'s own `setInterval`/
+`ontimer`) genuinely fires end-to-end already, with zero code from this repo involved —
+but found a real bug in the interaction with this app's own per-turn background
+autosave: `ProtocolTap.silent` stays `true` from the autosave's own silent SAVE command
+until the player's NEXT real command, so any timer-triggered `input_requested`/
+`buffer_text` arriving in that (normally-idle) window inherited `silent: true` and would
+be dropped by every consumer's `isSilent` gate — not delayed, permanently lost.
+`BridgeGlkOte.ontimer()` (`src/engine/glkote-bridge.ts`) now overrides asyncglk's
+`ontimer()` to call the new `ProtocolTap.handleTimerTick()`, which resets `silent` to
+`false`, but only when `!this.waiting_for_update` (a real request, e.g. that same
+autosave, still in flight) — guarding against incorrectly unmasking an in-flight silent
+round-trip's own response. Live-verified via DebugConsole's `[silent]` tags against the
+real game: before the fix, every timer tick after the per-turn autosave showed
+`input_requested (line) [silent]`; after, they show plain `input_requested (line)`.
+
 ## 5. Component inventory (React, `src/`)
 
 | Component | File | Responsibility |

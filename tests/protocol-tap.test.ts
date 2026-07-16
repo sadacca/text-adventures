@@ -151,3 +151,72 @@ describe('ProtocolTap.handleUpdate', () => {
     expect(tap.getTurn()).toBe(0);
   });
 });
+
+/**
+ * UX-24: real-capture-informed test. Sourced two genuine, reachable historicalsource
+ * (Microsoft, 2025) Z-machine builds — Trinity (Release 15/870628) and Border Zone
+ * (Release 9/871008, working title "spy") — via raw.githubusercontent.com, since
+ * ifarchive.org/mirror.ifarchive.org repeat the network-policy 403 UX-17/19 already hit.
+ * Playing Border Zone's Chapter 1 with DebugConsole's fixture recorder (idle after
+ * arming the interpreter's real-time timer with one turn) showed the interpreter DOES
+ * spontaneously push a fresh `input`-bearing update roughly once per `data.timer`
+ * interval with no command from the player — asyncglk's GlkOteBase timer loop genuinely
+ * fires end-to-end. But every one of those spontaneous updates inherited `silent: true`
+ * from the app's own per-turn background autosave (which runs right after the arming
+ * turn and leaves `silent` stuck true until the player's next real command) — so had
+ * that scene's timer interrupt printed anything, engineStore's `isSilent` gate would
+ * have dropped it permanently, not merely late. `handleTimerTick()` (called from
+ * `glkote-bridge.ts`'s `ontimer()` override, guarded on `!waiting_for_update`) is the
+ * fix: it un-silences the tap right before a genuinely idle-fired timer event reaches
+ * the interpreter, so the resulting update is treated like any ordinary turn.
+ */
+describe('ProtocolTap.handleTimerTick (UX-24)', () => {
+  const bufferWindow = {
+    id: 1,
+    type: 'buffer' as const,
+    height: 0,
+    left: 0,
+    rock: 0,
+    top: 0,
+    width: 0,
+  };
+
+  it('un-silences the next update, even though the last command sent was silent', () => {
+    const events: GameEvent[] = [];
+    const tap = new ProtocolTap((e) => events.push(e));
+    tap.handleEvent({ type: 'line', value: 'save', window: 1, gen: 0 }, { silent: true });
+
+    tap.handleTimerTick();
+    tap.handleUpdate({
+      type: 'update',
+      gen: 1,
+      windows: [bufferWindow],
+      content: [{ id: 1, text: [{ content: ['The phone rings.'] }] }],
+      input: [{ id: 1, type: 'line' }],
+    });
+
+    expect(events).toEqual([
+      { kind: 'buffer_text', text: 'The phone rings.', turn: 0, silent: false },
+      { kind: 'input_requested', type: 'line', turn: 0, silent: false },
+    ]);
+  });
+
+  it('regression guard: without a timer tick, the same update stays silent and would be dropped', () => {
+    const events: GameEvent[] = [];
+    const tap = new ProtocolTap((e) => events.push(e));
+    tap.handleEvent({ type: 'line', value: 'save', window: 1, gen: 0 }, { silent: true });
+
+    tap.handleUpdate({
+      type: 'update',
+      gen: 1,
+      windows: [bufferWindow],
+      content: [{ id: 1, text: [{ content: ['The phone rings.'] }] }],
+      input: [{ id: 1, type: 'line' }],
+    });
+
+    expect(events).toEqual([
+      { kind: 'buffer_text', text: 'The phone rings.', turn: 0, silent: true },
+      { kind: 'input_requested', type: 'line', turn: 0, silent: true },
+    ]);
+  });
+});

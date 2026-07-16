@@ -59,6 +59,21 @@ export class BridgeGlkOte extends GlkOteBase {
     super.update(data);
   }
 
+  /**
+   * UX-24: a Glk timer interrupt (asyncglk's own `setInterval`-driven mechanism,
+   * unmodified — see GlkOteBase) fires only while genuinely idle (`!waiting_for_update`,
+   * inherited `protected` from GlkOteBase); tell the tap so it stops treating the
+   * resulting update as a continuation of whatever silent/non-silent command ran last.
+   * Guarding on `waiting_for_update` matters: if a request IS outstanding (e.g. the
+   * per-turn background autosave's own SAVE round-trip), `send_event` below is a no-op
+   * anyway (GlkOteBase drops it), and resetting the tap's silent flag regardless would
+   * incorrectly unmask that in-flight silent round-trip's own response.
+   */
+  protected ontimer(): void {
+    if (!this.waiting_for_update) this.tap.handleTimerTick();
+    super.ontimer();
+  }
+
   protected update_windows(_windows: protocol.WindowUpdate[]): void {
     // Parsed by ProtocolTap directly from the raw update in `update()` above.
   }
