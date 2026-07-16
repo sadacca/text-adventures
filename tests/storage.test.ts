@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { computeGameId, detectFormat } from '../src/storage/gameId';
 import { addOrTouchGame, deleteGame, getGame, listGames } from '../src/storage/games';
-import { getLatestAutosave, writeAutosaveGeneration } from '../src/storage/autosaves';
+import {
+  getLatestAutosave,
+  stepBackAutosaveGeneration,
+  writeAutosaveGeneration,
+} from '../src/storage/autosaves';
 import { deleteSave, listSaves, readSave, writeSave } from '../src/storage/saves';
-import { appendTranscriptEntry, getTranscript } from '../src/storage/transcripts';
+import {
+  appendTranscriptEntry,
+  getTranscript,
+  trimTranscriptAfterTurn,
+} from '../src/storage/transcripts';
 import { deleteMap, getMap, saveMap } from '../src/storage/maps';
 import { createEmptyGraph } from '../src/map/graph';
 
@@ -78,6 +86,32 @@ describe('autosaves', () => {
   });
 });
 
+describe('UX-22: stepBackAutosaveGeneration', () => {
+  it('returns null and deletes nothing with 0 or 1 generations', async () => {
+    expect(await stepBackAutosaveGeneration('never-saved')).toBeNull();
+
+    const gameId = 'game-undo-single-gen';
+    await writeAutosaveGeneration(gameId, bytes(1), 1);
+    expect(await stepBackAutosaveGeneration(gameId)).toBeNull();
+    expect((await getLatestAutosave(gameId))?.turn).toBe(1);
+  });
+
+  it('deletes the newest generation and returns the one before it', async () => {
+    const gameId = 'game-undo-multi-gen';
+    await writeAutosaveGeneration(gameId, bytes(1), 1);
+    await writeAutosaveGeneration(gameId, bytes(2), 2);
+    await writeAutosaveGeneration(gameId, bytes(3), 3);
+
+    const stepped = await stepBackAutosaveGeneration(gameId);
+    expect(stepped?.turn).toBe(2);
+    expect(stepped?.snapshot).toEqual(bytes(2));
+
+    const latest = await getLatestAutosave(gameId);
+    expect(latest?.turn).toBe(2);
+    expect(latest?.snapshot).toEqual(bytes(2));
+  });
+});
+
 describe('saves', () => {
   it('round-trips named saves', async () => {
     const gameId = 'game-saves-roundtrip';
@@ -117,6 +151,22 @@ describe('transcripts', () => {
     expect(entries).toHaveLength(2000);
     expect(entries[0].turn).toBe(2);
     expect(entries[entries.length - 1].turn).toBe(2001);
+  });
+});
+
+describe('UX-22: trimTranscriptAfterTurn', () => {
+  it('drops entries after keepTurn and keeps entries at or before it', async () => {
+    const gameId = 'game-undo-trim';
+    for (let turn = 1; turn <= 4; turn++) {
+      await appendTranscriptEntry(gameId, { turn, command: `go ${turn}`, response: 'ok' });
+    }
+    await trimTranscriptAfterTurn(gameId, 2);
+    const entries = await getTranscript(gameId);
+    expect(entries.map((e) => e.turn)).toEqual([1, 2]);
+  });
+
+  it('is a no-op, not a throw, for a gameId with no transcript record', async () => {
+    await expect(trimTranscriptAfterTurn('never-transcribed', 5)).resolves.toBeUndefined();
   });
 });
 

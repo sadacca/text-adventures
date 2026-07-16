@@ -23,6 +23,7 @@ export function StoryScreen() {
   const status = useEngineStore((s) => s.status);
   const pinRequestId = useEngineStore((s) => s.pinRequestId);
   const scoreDelta = useEngineStore((s) => s.scoreDelta);
+  const undoLastMove = useEngineStore((s) => s.undoLastMove);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
   const hasSeenTapHint = useUiStore((s) => s.hasSeenTapHint);
   const dismissTapHint = useUiStore((s) => s.dismissTapHint);
@@ -117,8 +118,19 @@ export function StoryScreen() {
       {loading && <p className="loading-hint">Loading…</p>}
       {status && (
         <div className="status-line">
-          <span>{status.left}</span>
-          <span>{status.right}</span>
+          <span className="status-line-room">{status.left}</span>
+          <span className="status-line-score">{status.right}</span>
+          <button
+            type="button"
+            className="status-line-undo tap-target"
+            aria-label="Undo last move"
+            onClick={() => {
+              haptic();
+              void undoLastMove();
+            }}
+          >
+            ↶
+          </button>
         </div>
       )}
       {scoreDelta && (

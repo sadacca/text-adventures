@@ -402,6 +402,17 @@ state and are explicitly excluded via `partialize`.
 **2026-07-14 note (UX-19):** the persisted slice above gained a fourth field,
 `highlightVocab` (default `true`) — the "Highlight known words" settings toggle.
 
+**2026-07-16 note (UX-22):** `autosaves.ts` gained `stepBackAutosaveGeneration`, which
+deletes the newest generation and returns the one before it — i.e. "game state one move
+ago" — and `transcripts.ts` gained `trimTranscriptAfterTurn`, which drops any transcript
+entry past a given turn. Together these power `engineStore.undoLastMove()`: a single-step
+Undo that rewinds storage then reopens the game through the normal `openGame` resume
+path. Scope decision: single-step only (the existing `KEEP_GENERATIONS = 3` pruning window
+doesn't reliably support more), and the automapper's map graph is deliberately NOT rolled
+back — a stray room/edge from the undone move stays in the graph, same as any other
+mis-inference the player would otherwise fix by hand (§3's "the automapper never undoes a
+manual change").
+
 ## 5. Component inventory (React, `src/`)
 
 | Component | File | Responsibility |

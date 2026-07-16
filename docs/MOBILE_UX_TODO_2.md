@@ -1466,6 +1466,33 @@ a fresh game boot (only one generation exists) — the "Nothing to undo yet." al
 appears and nothing else changes. Check the ↶ button's legibility/tap-target size in
 light, dark, and retro themes.
 
+**Outcome (2026-07-16): done, implemented exactly as specced.** `stepBackAutosaveGeneration`
+added to `src/storage/autosaves.ts` and `trimTranscriptAfterTurn` to
+`src/storage/transcripts.ts`, both verbatim. `engineStore.undoLastMove` calls them, then
+reboots through the existing `openGame` resume path — no `src/engine/` changes needed.
+`StoryScreen.tsx`'s status line converted from positional `:first-child`/`:last-child` CSS
+selectors to explicit `.status-line-room`/`.status-line-score` classes (verbatim rename,
+same declarations) so the new `.status-line-undo` button could be added as a third flex
+child without breaking the existing two. `npm run lint`/`npm test` (152 tests, up from
+145)/`npm run format`/`npm run build` all pass. New coverage: `tests/storage.test.ts`
+gained cases for both new storage functions (0/1/2+ generations; trim drops/keeps by turn;
+no-record no-op); a new `tests/undoLastMove.test.ts` (same `vi.hoisted` fake-`EngineHandle`
+pattern as `tests/autoResume.test.ts`) covers the full `undoLastMove()` flow (storage
+rewound, transcript trimmed, engine rebooted) and the "nothing to undo" alert path (via
+`useDialogStore`, asserting `createEngine` is never called); `tests/story-ui.test.tsx`
+gained a `StoryScreen` render case for the Undo button.
+
+**Live-verified with real Playwright** (390×844, `npm run build && npm run preview`, real
+Chromium, against the bundled `zork1.z3`): from West of House, sent `north` twice (→
+Forest Path, Moves: 2), tapped ↶ — the status line and transcript rolled back in one step
+to North of House, Moves: 1, with the Forest Path move's transcript entry gone entirely
+(not just hidden). Reloaded the page: the resumed scrollback still showed North of
+House/Moves 1 — confirming `trimTranscriptAfterTurn` genuinely persisted, not just an
+in-memory rollback. Tapped ↶ twice more (down to a single remaining generation): the
+"Nothing to undo yet." alert appeared via the shared `DialogHost` (not `window.alert`) and
+nothing else changed. Screenshotted the ↶ button in light, dark, and retro themes — legible
+in all three (retro's green-on-black in particular).
+
 ### UX-23: Text styling passthrough (reverse video + emphasized)
 
 Z-machine games use `set_text_style` narratively, not just cosmetically (Trinity's
