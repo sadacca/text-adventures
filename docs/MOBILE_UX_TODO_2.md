@@ -1275,6 +1275,420 @@ scoped to the verification harness, not the shipped code.
 
 ---
 
+## Batch 5 — undo, text styling, timed input
+
+Source: `docs/ZMACHINE_CAPABILITIES_RESEARCH.md` (2026-07-16 research pass + its
+2026-07-16 peer-interpreter addendum), owner-reviewed same day. Promotes that doc's
+Tier 1 item 1 (Undo), Tier 2 item 3 (text styling passthrough), and Tier 2 item 5
+(timed input) to specced tasks. **Explicitly NOT promoted** by the same owner review:
+addendum item G (read-aloud/TTS — owner called it "a potential reach") and addendum
+item H (exportable transcripts — owner called it "less useful"). Both stay recorded in
+the research doc for a later look; do not build them as part of this batch.
+
+Same global working agreements as every prior batch (top of this file) apply: one
+commit per task, `npm run lint`/`npm test`/`npm run format`/`npm run build` all green
+before each commit, visual checks at 390×844 across all three themes, CSS tokens only,
+sentence-case UI text, dated SPECS.md notes for any behavior change.
+
+### UX-22: Step-back "Undo last move"
+
+**The storage already does the hard part.** `writeAutosaveGeneration`
+(`src/storage/autosaves.ts:13`) keeps the newest `KEEP_GENERATIONS = 3` autosave
+generations per game, each stamped with the turn it was taken after — one new
+generation is written after literally every player turn (`src/state/engineStore.ts`'s
+`input_requested`/`'line'` branch, `if (event.turn > lastAutosaveTurn)`). `getLatestAutosave`
+is the only reader anywhere in the app; the second-newest generation — i.e. exactly
+"game state one move ago" — sits unused. This task wires a single-step Undo to it. No
+`src/engine/` changes are needed at all: undoing reuses the exact boot/resume path
+`openGame` already has, just pointed at an older snapshot.
+
+**Scope decision (do not expand without a separate owner call): single-step undo only,
+map graph NOT rolled back.** `KEEP_GENERATIONS = 3` only reliably supports stepping back
+one move before the pruning window and normal post-undo play both erode further
+history — this task does not change that constant or attempt a multi-level undo
+stack/browser. The automapper graph is also left exactly as it was: per `SPECS.md` §3,
+the map only ever grows and "the automapper never undoes a manual change" — a
+stray room/edge recorded from the undone move staying in the graph is harmless
+clutter, consistent with how the automapper already behaves when it mis-infers
+something a player has to fix by hand. Building a "roll the map back to turn N" primitive
+is a materially bigger, separate project; do not attempt it here.
+
+**1. Storage** (`src/storage/autosaves.ts`): add, after `getLatestAutosave`:
+
+```ts
+/** UX-22: deletes the single newest autosave generation and returns the generation that
+ *  is now newest — i.e. the game state one move earlier — or null if there weren't at
+ *  least two generations to step back through (nothing to undo yet). */
+export async function stepBackAutosaveGeneration(gameId: string): Promise<LatestAutosave | null> {
+  const db = await getDb();
+  const existing = await generationsForGame(gameId);
+  if (existing.length < 2) return null;
+  const sorted = [...existing].sort((a, b) => b.generation - a.generation);
+  const newest = sorted[0];
+  const previous = sorted[1];
+  await db.delete('autosaves', [gameId, newest.generation]);
+  return {
+    snapshot: new Uint8Array(previous.snapshot),
+    turn: previous.turn,
+    generation: previous.generation,
+    savedAt: previous.savedAt,
+  };
+}
+```
+
+**2. Storage** (`src/storage/transcripts.ts`): add, after `getTranscript` — the undone
+move's transcript entry (and any later ones, though there shouldn't be any) must not
+linger in the rebuilt scrollback:
+
+```ts
+/** UX-22: drops every transcript entry for a turn after `turn` (kept: turn <= keepTurn).
+ *  Used when Undo rewinds the engine to an earlier autosave generation, so the
+ *  rebuilt-on-resume scrollback (engineStore.openGame) matches the rewound state instead
+ *  of still showing the undone move's response. */
+export async function trimTranscriptAfterTurn(gameId: string, keepTurn: number): Promise<void> {
+  const db = await getDb();
+  const existing = await db.get('transcripts', gameId);
+  if (!existing) return;
+  const trimmed = existing.entries.filter((e) => e.turn <= keepTurn);
+  if (trimmed.length === existing.entries.length) return;
+  await db.put('transcripts', { gameId, entries: trimmed });
+}
+```
+
+**3. Store** (`src/state/engineStore.ts`): import `stepBackAutosaveGeneration` and
+`trimTranscriptAfterTurn` alongside the existing `autosaves.js`/`transcripts.js`
+imports. Add to `EngineState` (interface, directly under `restartPlaythrough`, and
+implementation, directly after it):
+
+```ts
+/** UX-22: rewinds to the autosave generation one move before the current one (see
+ *  storage/autosaves.ts's stepBackAutosaveGeneration) and reboots the engine against
+ *  it — the same teardown-and-reopen path restartPlaythrough uses, just without
+ *  wiping the playthrough. No-ops with an alert if there's nothing to step back to. */
+undoLastMove: () => Promise<void>;
+```
+
+```ts
+async undoLastMove() {
+  const { gameId } = get();
+  if (!gameId) return;
+  const previous = await stepBackAutosaveGeneration(gameId);
+  if (!previous) {
+    await useDialogStore.getState().ask({ kind: 'alert', title: 'Nothing to undo yet.' });
+    return;
+  }
+  await trimTranscriptAfterTurn(gameId, previous.turn);
+  await get().openGame(gameId);
+},
+```
+
+(`openGame` already tears down the active session, calls `getLatestAutosave` — which
+now returns what Undo just made newest — preloads it, boots with `autorestore: true`,
+and rebuilds scrollback from the just-trimmed transcript. Nothing else about `openGame`
+changes.)
+
+**4. UI** (`src/story/StoryScreen.tsx`, `src/App.css`) **[visual check]**: the existing
+`.status-line` CSS keys its two spans off `:first-child`/`:last-child`
+(`src/App.css:130,134`) — adding a third element breaks that. Convert to explicit
+classes first, then add the button as the third flex child:
+
+- `StoryScreen.tsx`'s status-line block:
+  ```tsx
+  {status && (
+    <div className="status-line">
+      <span className="status-line-room">{status.left}</span>
+      <span className="status-line-score">{status.right}</span>
+      <button
+        type="button"
+        className="status-line-undo tap-target"
+        aria-label="Undo last move"
+        onClick={() => {
+          haptic();
+          void undoLastMove();
+        }}
+      >
+        ↶
+      </button>
+    </div>
+  )}
+  ```
+  (`const undoLastMove = useEngineStore((s) => s.undoLastMove);` alongside the block's
+  other store selectors.) Always rendered when `status` is present — do not add extra
+  reactive "can I undo" state; the store action's own "Nothing to undo yet" alert is the
+  existing app-wide pattern for this (mirrors `restoreNamed`'s "No saved games yet."
+  alert in `engineStore.ts`).
+- `App.css`: rename the two selectors
+  ```css
+  .status-line-room { font-weight: 600; }
+  .status-line-score { color: var(--text-dim); }
+  ```
+  replacing the old `.status-line span:first-child`/`span:last-child` rules verbatim
+  (same declarations, just keyed off the new classes), and add:
+  ```css
+  .status-line-undo {
+    margin-left: auto;
+    font-size: 1.1em;
+    line-height: 1;
+  }
+  ```
+  (`.status-line` is already `display:flex; justify-content: space-between` —
+  `margin-left: auto` on the button keeps the existing room/score spacing intact and
+  docks the button to the right edge without touching the flex container's own rules.)
+
+**5. Docs**: dated `SPECS.md` note near §4 (autosave generations) describing
+`stepBackAutosaveGeneration`/`trimTranscriptAfterTurn` and the single-step,
+map-not-rolled-back scope decision above.
+
+**6. Tests**:
+- `tests/storage.test.ts`: new cases for `stepBackAutosaveGeneration` (0 or 1
+  generation → null, no delete; 2+ generations → deletes the newest, returns what was
+  second-newest, and a follow-up `getLatestAutosave` reflects the deletion) and for
+  `trimTranscriptAfterTurn` (entries beyond `keepTurn` are dropped; entries at or before
+  `keepTurn` survive untouched; a gameId with no transcript record is a no-op, not a
+  throw).
+- A new `engineStore` test (extend whichever existing file mocks `createEngine` the way
+  `tests/autoResume.test.ts`/`tests/travelTo.test.ts` do — same `vi.hoisted` fake
+  `EngineHandle` pattern): seed two autosave generations plus a transcript entry for
+  each turn, call `undoLastMove()`, assert `getLatestAutosave` now returns the older
+  generation's bytes/turn and `getTranscript` no longer includes the newer entry. A
+  second case: only one (or zero) generations seeded — `undoLastMove()` triggers the
+  dialog-store alert path (assert via the existing `useDialogStore` test pattern) and
+  does not call `openGame` again / does not touch storage.
+- `tests/story-ui.test.tsx`: the status-line block renders a button labeled "Undo last
+  move" whenever `status` is set; clicking it calls the mocked `undoLastMove`.
+
+**Acceptance:** lint/tests/build pass. Live at 390×844 with the bundled Zork I: play a
+few turns, tap Undo — the transcript and status line roll back to the prior room/turn,
+and a subsequent `look` behaves as if the undone move never happened (Bocfel's own state
+is genuinely rewound, not just the display). Reload the page after an undo — the resumed
+scrollback matches the rewound state, not the pre-undo one. Tap Undo twice in a row from
+a fresh game boot (only one generation exists) — the "Nothing to undo yet." alert
+appears and nothing else changes. Check the ↶ button's legibility/tap-target size in
+light, dark, and retro themes.
+
+### UX-23: Text styling passthrough (reverse video + emphasized)
+
+Z-machine games use `set_text_style` narratively, not just cosmetically (Trinity's
+dream-countdown sequences, Bureaucracy's reverse-video forms, Sherlock's/Border Zone's
+italicized remembered text). The wire protocol already carries this — `TextRun`
+(asyncglk's `src/common/protocol.ts`) is `{ style: string; text: string; css_styles?:
+Record<string, string | number>; hyperlink?: number }` per run — but
+`protocol-tap.ts`'s `run_text()` (`src/engine/protocol-tap.ts:17`) discards `style`/
+`css_styles` entirely and joins only `.text`, so every consumer downstream already sees
+flattened plain text with zero style information. This task recovers two of the
+narratively-meaningful categories: reverse video and emphasized/italic. Bold and
+fixed-pitch/monospace are explicitly OUT of scope for this task (bold's visual weight is
+already claimed by UX-19's vocabulary highlighting; fixed-pitch needs transcript
+layout changes this task doesn't touch) — note both as future extensions, don't build
+them here.
+
+**Scope decision: session-only, not persisted.** Style data is attached to the live
+`transcript` state only. `storage/transcripts.ts`'s `TranscriptEntry.response` stays a
+plain `string` — do NOT change the IndexedDB schema. This means a reload's rebuilt
+scrollback (`engineStore.openGame`'s resume path) reverts styled text to plain,
+un-styled text. That's an accepted, documented limitation, not a bug to fix in this
+task — persisting styled runs would mean redesigning `transcript`'s whole shape and the
+resume path together, a materially bigger task than recovering the live-play case.
+
+**0. Required first step — capture real style data before writing any decoder.** The
+exact `style` names and `css_styles` keys Bocfel/remglk-rs actually emit for reverse
+video vs. italic are NOT reliably known without a live sample (the two style-name
+candidates worth checking first are the canonical Glk style hints — `Style_alert`,
+`Style_emphasized`, `Style_note`, etc. — and, per `css_styles`, literal keys like
+`"reverse"`/`"monospace"` that a backend can send as finer-grained CSS-ish overrides;
+neither is confirmed against Bocfel's actual output). Use the app's own already-shipped
+DebugConsole "record fixture" toggle (Task 1.4, `SPECS.md` §6) against a game known to
+use styled text — Trinity, Bureaucracy, or Wishbringer's bell — idle-testing until a
+styled passage prints, then inspect the downloaded `.jsonl` fixture's raw `content`
+updates for the actual `style`/`css_styles` values on those runs. **Do not guess the
+mapping and do not write the classifier in step 2 until this capture is done.** If no
+such game is reachable in the working environment (the known network-policy blockers
+from UX-17/UX-19's outcome notes may recur), STOP this task and leave a
+`TODO(owner):` note with exactly what was tried, same as those tasks did — do not ship
+a classifier built on guessed style names.
+
+**1. Protocol tap** (`src/engine/protocol-tap.ts`): add a run-preserving counterpart to
+`run_text()` that returns `{ text: string; style: string; css_styles?: Record<string,
+string | number> }[]` instead of a flattened string (`run_text()` itself stays, used
+wherever only flattened text is needed). In `updateContent`'s buffer branch, build both
+the existing flattened `text` (unchanged — every existing consumer: automapper
+`mentions.ts`, `dictionary.ts`-driven highlighting, `pendingResponseChunks` joins — must
+keep working off the same flattened string as today) and a new paragraph-and-run
+structure, and pass the latter through as a new field on the emitted event (step 2).
+
+**2. Types** (`src/engine/types.ts`): add a narrow, decoded (not raw-wire) shape — per
+the file's own stated contract ("All features consume ONLY these"), do not leak Glk
+style-hint strings or `css_styles` keys past this module. Add:
+
+```ts
+/** UX-23: one styled span of a buffer_text chunk. `emphasis` is a closed, decoded set —
+ *  classification of the raw Glk style/css_styles data happens once, in protocol-tap.ts,
+ *  against values confirmed by a live capture (see this task's step 0). null = no
+ *  special styling (the common case). */
+export interface StyledRun {
+  text: string;
+  emphasis: 'reverse' | 'emphasized' | null;
+}
+```
+
+and extend `GameEvent`'s `buffer_text` variant with `runs?: StyledRun[]` (optional —
+absent/empty means "nothing styled in this chunk," so existing tests/fixtures that don't
+exercise styled text need no changes). The existing `text` field on `buffer_text` is
+unchanged and remains authoritative for every non-styling consumer.
+
+**3. Rendering** (`src/story/TapWords.tsx`): today `TapWords` tokenizes a flat string
+into tap-target word spans. Extend it to accept the new `runs` (when present, alongside
+the existing `text` prop — both describe the same chunk) and wrap each tap-word span in
+an outer styled wrapper based on which run's character range it falls in: walk `runs` in
+order, accumulating a running character offset per run (`runs.map(r => r.text).join('')
+=== text`, so offsets line up exactly), and when tokenizing words from `text` as today,
+look up which run each word's start offset belongs to. Apply `story-reverse` when that
+run's `emphasis === 'reverse'`, `story-emphasized` when `'emphasized'`, neither when
+`null` — as an additional wrapper class alongside (not replacing) the existing
+`tap-word`/`tap-word-vocab` classes, so vocabulary bolding (UX-19) and word-tap targets
+keep working unchanged inside a styled run. Command-echo lines (`.story-echo`) and any
+`TapWords` call site that doesn't pass `runs` render exactly as today — this is a purely
+additive prop.
+
+**4. CSS** (`src/App.css`), token-only, reversible in all three themes:
+
+```css
+/* UX-23: reverse video — literal swap of the theme's own text/background tokens, so it
+ * auto-adapts across light/dark/retro instead of hard-coding colors. */
+.story-reverse {
+  background: var(--text);
+  color: var(--bg);
+}
+.story-emphasized {
+  font-style: italic;
+}
+```
+
+**5. Docs**: dated `SPECS.md` note under §1 (`GameEvent` shape) describing `StyledRun`/
+`runs`, the reverse-video/emphasized-only scope, the session-only (not persisted)
+decision, and a pointer to whatever `style`/`css_styles` values step 0's capture
+actually found (record them verbatim — this is the reference future extensions, e.g.
+fixed-pitch, will need).
+
+**6. Tests**:
+- `tests/protocol-tap.test.ts`: extend (or add) a fixture exercising a buffer-window
+  content update with multiple runs of differing `style`/`css_styles` (built directly
+  from step 0's captured values, not invented ones) — assert the emitted `buffer_text`
+  event's `runs` array has the right text/emphasis split, and that a chunk with only
+  plain runs has `runs` either absent or all-`null`-emphasis (implementer's choice,
+  document whichever in `SPECS.md`).
+- A new `TapWords` test in `tests/story-ui.test.tsx`: given `text="The room is dark."`
+  and `runs` marking "dark." as `'reverse'`, the rendered spans covering "dark." carry
+  `story-reverse` and the rest don't; tapping a word inside the reverse-video run still
+  appends it to the draft (styling must never break tap targets). A second case combines
+  a `runs`-marked emphasized word with `vocabulary` set so it's also vocab-bold —
+  assert both classes land on the same span.
+
+**Acceptance:** lint/tests/build pass. Live at 390×844 against whichever game step 0
+used: a reverse-video or italicized passage actually renders visually distinct (screenshot
+in all three themes — reverse video in particular must stay legible against retro's
+CRT-green background, not just light/dark), tapping a word inside a styled run still
+works exactly like an unstyled one, and reloading the page after such a passage has
+scrolled by shows it reverted to plain text (documented limitation, not a bug — confirm
+it doesn't crash or render mojibake, just plain text).
+
+### UX-24: Timed input — surface interrupt/countdown text correctly
+
+The Z-machine's `read`/`read_char` opcodes support an optional timeout + interrupt
+routine (v4+): the game gets to run code — typically printing something — while still
+waiting for input, then re-prompts. Infocom's Border Zone (1987, the first Z-machine
+version 5 release) is the documented flagship case, built specifically around real-time
+keyboard interaction; the reference ZIP interpreter needed dedicated timeout support for
+it. This is a narrower, more concrete task than "add timer support" sounds like, because
+**the low-level Glk timer mechanic is already fully implemented and running today, in
+this app, with zero code from this repo involved:** `GlkOteBase` (asyncglk,
+`src/glkote/common/glkote.ts` in the vendored submodule) already reads a `timer`
+interval off every `StateUpdate` and manages it directly —
+
+```ts
+if (data.timer !== undefined) {
+  if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  if (data.timer) { this.timer = setInterval(() => this.ontimer(), data.timer); }
+}
+// ...
+protected ontimer() {
+  if (!this.disabled && this.timer) this.send_event({type: 'timer'});
+}
+```
+
+`BridgeGlkOte.update()` (`src/engine/glkote-bridge.ts:57`) calls `super.update(data)`,
+so this runs unmodified today. **What this task actually needs to determine and fix (if
+anything) is narrower: whether the text an interrupt routine prints while the original
+input request is still outstanding reaches the player's transcript promptly, or gets
+silently swallowed into `pendingResponseChunks` until the player's next real command
+commits it** (`engineStore.ts`'s `input_requested` handler is the only place anything
+gets pushed onto `transcript` today, per the code at `engineStore.ts:260-291`) — which,
+if true, means a countdown or "the phone rings" message would appear late and
+misattributed to the wrong turn, a real (if narrow) correctness bug, not a missing
+feature.
+
+**This cannot be resolved by reading code alone — it depends on whether RemGlk-rs/Bocfel
+resends the `input` array on every update (in which case the existing
+`input_requested`-triggered commit path may already handle it fine) or only when input
+state actually changes (in which case interrupt text needs a new flush path). Do not
+guess; investigate first.**
+
+**Phase 1 — investigation (required before any code change):**
+1. Source a real timed-input game. Border Zone is the known case; if it can't be sourced
+   (the same `ifarchive.org`/network-policy blockers UX-17's outcome notes hit may
+   recur — check `raw.githubusercontent.com`-reachable mirrors the way UX-17 eventually
+   found `historicalsource/zork1` before giving up), any other v4+ game confirmed to use
+   a `read`/`read_char` timeout works equally well for this investigation.
+2. Use DebugConsole's fixture recording (same tool UX-23 step 0 needs) to capture a
+   session that idles through at least one interrupt firing, without the player typing
+   anything.
+3. Inspect the captured `.jsonl`: does the interrupt-triggered content update arrive
+   inside a `StateUpdate` that also re-sends `data.input` (a fresh `InputUpdate` for the
+   same window/type), or does it arrive as a content-only update with no `input` field?
+4. Cross-check against live behavior in the running app at the same moment: does the
+   interrupt's text appear in the transcript immediately, appear only after the next
+   real command, or not appear at all?
+
+**Phase 2 — implementation, contingent on Phase 1's finding:**
+- If step 3 shows `input` IS resent on the interrupt-triggered update: `ProtocolTap`'s
+  existing `updateInputs`/`flushStatusLines` path already fires a fresh
+  `input_requested`, which already drives `engineStore`'s existing commit logic — in
+  which case this task is mostly about confirming that's really what step 4 showed, and
+  about polish: e.g. deciding whether `pinRequestId`/auto-scroll should re-pin for an
+  interrupt-originated commit the same way a player command does (probably yes — the
+  player didn't ask for it, but they should still see it), and making sure `engine.ts`'s
+  `busy`/`queuedCommands` gate doesn't misfire if a queued player command was in flight
+  when the interrupt landed.
+- If step 3 shows `input` is NOT resent (content-only update, no accompanying
+  `input_requested`): `engineStore.ts` needs a new idle-flush path — after a
+  `buffer_text` event, if no further event (especially no `input_requested`) arrives
+  within a short window (~150–250ms; tune against the real capture, not a guess), commit
+  `pendingResponseChunks` to `transcript` as an interim update (mirroring UX-14's
+  char-prompt precedent: commit text without treating it as a full turn boundary — no
+  turn-counter bump, no autosave). The pending command/turn bookkeeping must stay intact
+  for whatever real `input_requested` eventually does arrive.
+- Either way: the countdown-y or "something is happening" text must end up
+  distinguishable from an ordinary turn's response in the transcript at least by not
+  being silently merged into unrelated later text — exact visual treatment (a subtle
+  marker, or none beyond correct ordering) is an implementation call, not pinned down
+  here.
+- If Phase 1 can't source a test game at all: STOP, same as UX-17/UX-23 step 0 — leave a
+  dated `TODO(owner):` note in this task's entry recording exactly what was tried, and do
+  not ship speculative Phase 2 code against an untested assumption.
+
+**Tests:** depend entirely on Phase 1's finding — write them once the real behavior is
+known, using a `protocol-tap.test.ts` fixture built from the real capture (same
+discipline as UX-23). Do not write tests against a hypothetical/guessed event sequence.
+
+**Acceptance:** lint/tests/build pass. Live at 390×844 against the sourced game: idle
+through a real timed interrupt without typing anything — its text appears in the
+transcript at the correct point (not merged into a later unrelated turn, not missing),
+and ordinary (non-timed) play in the same session is unaffected. If Phase 1 concluded
+the existing path already handles this correctly, the acceptance check is a live
+confirmation of that plus the fixture test, with no other code change needed.
+
+---
+
 ## Appendix — candidates reviewed but NOT approved for implementation
 
 Sketches for the owner's next review. **Do NOT implement anything below** — listed so
