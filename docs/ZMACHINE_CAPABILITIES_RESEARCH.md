@@ -178,3 +178,93 @@ promoted to a scoped batch task, `UX-`-numbered and specced at the same
 file-and-line precision as `MOBILE_UX_TODO_2.md`'s existing tasks, before any
 implementation starts. Item 1 (Undo) is the strongest "small effort, high delight"
 candidate — the storage layer already does the hard part.
+
+---
+
+## Addendum (2026-07-16, same day) — features borrowed from peer IF-client projects
+
+Follow-up pass, owner-requested: rather than reasoning only from the Z-machine/Glk spec
+(above), survey what *other* interpreter projects actually ship, and check which of
+those ideas this app is missing. Sourced live from each project's own README/docs
+(links in each item), not from memory alone.
+
+### G. Read-aloud / text-to-speech — inspired by TextFiction and Spatterlight
+
+Two independent peer projects converge on this. **TextFiction**
+([onyxbits/TextFiction](https://github.com/onyxbits/TextFiction), Android) is built with
+"stories can optionally be read out aloud via Text To Speech synthesis... easy to handle
+for blind and visually impaired users" as a headline feature.
+**Spatterlight** ([angstsmurf/spatterlight](https://github.com/angstsmurf/spatterlight),
+Mac) goes further with dedicated VoiceOver integration: a "Speak commands" toggle, custom
+VoiceOver rotors for navigating output, and detection of old-style char-driven menus
+(explicitly including "the Bureaucracy intro form") to make them screen-reader
+navigable, per its [AppleVis testing thread](https://www.applevis.com/forum/macos-mac-apps/looking-voiceover-testers-my-text-adventure-interpreter).
+
+This app currently has only generic `aria-live="polite"` on `.app-content`
+(`src/App.tsx:76`) and the score toast (`src/story/StoryScreen.tsx:131`) — nothing reads
+text aloud. The Web Speech API (`SpeechSynthesis`) is available in mobile browsers with
+no new dependency, and the payoff isn't purely accessibility: reading new room text aloud
+hands-free is also just convenient for playing while walking, which fits this app's
+mobile-first framing directly. Sketch: a "Read aloud" toggle in More (same checkbox
+pattern as UX-19's vocab-highlight/UX-15's persisted settings), speaking each new
+`buffer_text` chunk as it lands; a "speak my own commands too" sub-option mirrors
+Spatterlight's exact toggle. Menu-detection for genuinely non-linear char menus (Journey,
+Trinity, Bureaucracy) is a much bigger lift — flag as a stretch goal, not part of a first
+pass, and note it's a different problem from UX-14's "Tap to continue" (which only
+handles single-key-then-resume prompts, not multi-option menus).
+
+### H. Exportable/shareable transcripts — inspired by Lectrote
+
+**Lectrote** ([erkyrath/lectrote](https://github.com/erkyrath/lectrote)) ships
+"Universal transcript mode: a transcript is saved for every game you play... select
+'Browse Transcripts' to see a list." This app already stores the equivalent data —
+`storage/transcripts.ts`'s per-game ring buffer, capped at 2000 entries
+(`SPECS.md` §4) — purely to rebuild scrollback on resume. It's never exposed to the
+player. Sharing a transcript (a fun death, a full playthrough, a puzzle solution to ask
+a friend about) is a long-standing IF-community habit, and the exact UI pattern already
+exists in this app for a different feature: named-save Quetzal export via
+`navigator.share`/download (`IMPLEMENTATION_PLAN.md`'s saves.ts description, ~line 403).
+Reusing that pattern for a "Share transcript" action (plain text, not Quetzal bytes) in
+More or the Story overflow menu is a small, self-contained addition given the storage
+already exists — no engine changes needed at all.
+
+### I. Per-game settings override — inspired by Gargoyle (speculative, lower confidence)
+
+**Gargoyle** ([garglk/garglk](https://github.com/garglk/garglk)) layers config at
+system/user/**per-game** priority, so a player can tweak font or margins for one
+particular game without changing the global default. This app's `uiStore` settings
+(theme, story font, text size — UX-15) are global across every game. A text-dense game
+(Trinity, A Mind Forever Voyaging) might warrant a different text size than a
+puzzle-light one. Flagged as genuinely lower-confidence than G/H: global settings are
+simpler, this is a single-device mobile context (less need for per-project tuning than
+Gargoyle's desktop multi-format use case), and it adds a real UI surface (where would a
+per-game override live?) for a want that hasn't been observed from actual users of this
+app. Listed for completeness, not recommended for near-term scoping.
+
+### Surveyed and explicitly not recommended
+
+- **Gargoyle's typography polish** (subpixel rendering, kerning, smart-quote/ligature
+  substitution, floating-point layout). Real and well-executed in Gargoyle, but tuned for
+  desktop reading; a 390px mobile viewport with a handful of story-font choices already
+  (UX-15) gets proportionally less benefit for the CSS/rendering complexity involved.
+  Skip unless a specific legibility complaint surfaces.
+- **TextFiction's SMS/chat-bubble transcript styling.** A validation point, not a gap:
+  this app already leans mobile-native (compass rose, chips, tap-a-word) rather than
+  porting a desktop terminal metaphor, which is the same instinct TextFiction's
+  chat-bubble UI represents. A full switch from the current flat/terminal-style
+  transcript to chat bubbles would be a large visual redesign with real trade-offs (long
+  room descriptions don't bubble well) — not something to take on just because a peer
+  project does it differently. No action recommended.
+- **Multi-format support (Glulx/TADS/Hugo/Adrift), the headline feature of Lectrote,
+  Gargoyle, and Spatterlight alike.** Explicitly out of scope: this app's whole premise
+  (per the README) is the Z-machine/Infocom catalog specifically, and Bocfel is a
+  Z-machine-only interpreter — broadening formats would mean bundling additional WASM
+  interpreters (Git/Glulxe for Glulx, etc.), a scope change big enough it should be its
+  own product decision, not a UX-task-sized addition.
+
+### Sources consulted this pass
+
+- [onyxbits/TextFiction](https://github.com/onyxbits/TextFiction) (Android, TTS-first design)
+- [erkyrath/lectrote](https://github.com/erkyrath/lectrote) (universal transcripts, autosave/resume, per-appearance theming)
+- [garglk/garglk](https://github.com/garglk/garglk) (typography, multi-format, per-game config tiers)
+- [angstsmurf/spatterlight](https://github.com/angstsmurf/spatterlight) fork, and its [AppleVis VoiceOver-testing thread](https://www.applevis.com/forum/macos-mac-apps/looking-voiceover-testers-my-text-adventure-interpreter) (deep screen-reader integration, menu detection)
