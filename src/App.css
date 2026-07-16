@@ -742,6 +742,50 @@
   margin: 0;
 }
 
+/* Batch 4 / UX-21: floor switcher + "return to current floor" + Fit, grouped together
+   on the right of the header. */
+.map-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.floor-switcher {
+  display: flex;
+  gap: 4px;
+}
+
+.floor-chip {
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.floor-chip[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* A cross-floor up/down edge, rendered as a small tappable pill instead of a line
+   stretching toward a room on another floor that isn't drawn here. */
+.map-floor-stub {
+  cursor: pointer;
+}
+
+.map-floor-stub rect {
+  fill: var(--bg-elevated);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.map-floor-stub text {
+  fill: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .map-toast {
   position: absolute;
   z-index: 1;

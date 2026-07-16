@@ -76,6 +76,8 @@ export interface RoomNode {
   note?: string;
   flags: { unknown?: boolean; teleportTarget?: boolean; userCreated?: boolean };
   firstDescription?: string;  // first buffer_text on first arrival (feeds phase 3 art)
+  floor?: number;           // Batch 4 / UX-20 — see note below; undefined reads as 0
+  floorLocked?: boolean;    // Batch 4 / UX-20 — true once a user sets floor directly
 }
 
 export interface RoomEdge {
@@ -102,6 +104,22 @@ table"). Populated by `mergeRooms()` in `src/map/graph.ts`; not in the original 
 above but required to make rule 7's third clause actually testable/implementable. Every
 room-name lookup checks `aliases` first, before the normal name-matching/disambiguation
 path.
+
+**2026-07-16 addition (Batch 4 / UX-20, multi-level maps — data model half):**
+`RoomNode.floor`/`floorLocked` (undefined `floor` reads as 0 everywhere). Auto-inferred
+by `Automapper.applyFloor`, called right after a destination room is resolved in both
+`handleMovement` and the true-teleport bootstrap path: `up`/`down` moves set the
+destination's floor to the origin's `floor ?? 0` plus/minus one; every other case
+(a teleport/bootstrap with no origin) defaults to floor 0; `in`/`out` moves never touch
+floor at all — deliberate, since entering/leaving a structure doesn't imply a level
+change in IF convention (Zork's own house interior/exterior share a floor). Once a
+room's `floor` is set — by inference OR by `setRoomFloor` (the `RoomEditSheet` "Floor"
+field, UX-21, which also sets `floorLocked`) — it is never overwritten again, the same
+"never destroy established data" policy `posLocked`/rule 7 already use. `computeLayout`
+(`src/map/layout.ts`) groups rooms by floor and lays out each independently; `MapScreen`
+renders one floor at a time with a floor switcher, rendering cross-floor `up`/`down`
+edges as tappable stubs rather than lines to an undrawn room. See §5's component
+inventory note and `docs/MOBILE_UX_TODO_2.md`'s UX-20/UX-21 entries for the full design.
 
 ## 2. Direction normalization table (`src/map/directions.ts`)
 
@@ -396,7 +414,7 @@ state and are explicitly excluded via `partialize`.
 | `CompassRose` | `story/CompassRose.tsx` | collapsed 48px fab → expanded 3×3 + U/D/IN/OUT; known exits highlighted (subscribes to MapGraph) |
 | `ExitsRow` | `story/ExitsRow.tsx` | (2026-07-14, UX-6) row of confirmed-exit chips below the status line, sharing `useKnownExits()` with `CompassRose` |
 | `TapWords` | `story/TapWords.tsx` | wraps buffer text; word-tap appends to CommandBar draft |
-| `MapScreen` | `map/MapScreen.tsx` | SVG canvas, pan/pinch (Pointer Events), selection |
+| `MapScreen` | `map/MapScreen.tsx` | SVG canvas, pan/pinch (Pointer Events), selection; Batch 4 / UX-21 floor switcher (renders one floor at a time, cross-floor up/down edges as tappable stubs) |
 | `RoomEditSheet` | `map/RoomEditSheet.tsx` | long-press bottom sheet: rename/note/merge/delete |
 | `MoreScreen` | `more/MoreScreen.tsx` | saves list + export/import, settings, about/licenses |
 | `DebugConsole` | `debug/DebugConsole.tsx` | live GameEvent stream; hidden behind settings toggle |

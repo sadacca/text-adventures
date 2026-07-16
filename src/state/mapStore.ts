@@ -7,6 +7,7 @@ import {
   mergeRooms,
   moveRoom,
   renameRoom,
+  setRoomFloor,
   setRoomNote,
   type MapGraph,
 } from '../map/graph.js';
@@ -30,6 +31,9 @@ interface MapState {
    *  that just happened) — `moveRoom` itself sets `posLocked`, which is the only thing
    *  that has to happen for the room to stick exactly where it was dropped. */
   moveRoom: (id: string, pos: { x: number; y: number }) => void;
+  /** Batch 4 / UX-21: RoomEditSheet's Floor field. Locks the floor (setRoomFloor) so a
+   *  later auto-inference never overwrites the user's choice. */
+  setRoomFloor: (id: string, floor: number) => void;
 }
 
 let automapper: Automapper | null = null;
@@ -106,6 +110,12 @@ export const useMapStore = create<MapState>((set) => ({
   moveRoom(id, pos) {
     if (!automapper) return;
     moveRoom(automapper.graph, id, pos);
+    commit(set);
+  },
+
+  setRoomFloor(id, floor) {
+    if (!automapper) return;
+    setRoomFloor(automapper.graph, id, floor);
     commit(set);
   },
 
