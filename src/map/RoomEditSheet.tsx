@@ -20,10 +20,12 @@ export function RoomEditSheet({
 }) {
   const renameRoom = useMapStore((s) => s.renameRoom);
   const setRoomNote = useMapStore((s) => s.setRoomNote);
+  const setRoomFloor = useMapStore((s) => s.setRoomFloor);
   const deleteRoomAction = useMapStore((s) => s.deleteRoom);
   const mergeRoomsAction = useMapStore((s) => s.mergeRooms);
   const [name, setName] = useState(room.name);
   const [note, setNote] = useState(room.note ?? '');
+  const [floor, setFloor] = useState(String(room.floor ?? 0));
   const [mergeTarget, setMergeTarget] = useState('');
 
   const mergeCandidates = allRooms.filter((r) => r.id !== room.id);
@@ -52,6 +54,21 @@ export function RoomEditSheet({
             onChange={(e) => setNote(e.target.value)}
             onBlur={() => setRoomNote(room.id, note)}
             rows={2}
+          />
+        </label>
+
+        <label className="room-edit-field">
+          Floor
+          <input
+            type="number"
+            value={floor}
+            onChange={(e) => setFloor(e.target.value)}
+            onBlur={() => {
+              const parsed = Number.parseInt(floor, 10);
+              if (!Number.isNaN(parsed) && parsed !== (room.floor ?? 0)) {
+                setRoomFloor(room.id, parsed);
+              }
+            }}
           />
         </label>
 

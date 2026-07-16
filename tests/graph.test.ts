@@ -8,6 +8,7 @@ import {
   moveRoom,
   normalizeRoomName,
   renameRoom,
+  setRoomFloor,
   setRoomNote,
   UNKNOWN_ROOM_ID,
   type MapGraph,
@@ -753,9 +754,12 @@ describe('serialization', () => {
     am.handleEvent(status('Kitchen', 0));
     am.handleEvent(cmd('north', 1));
     am.handleEvent(status('Pantry', 1));
+    setRoomFloor(am.graph, 'pantry', 3);
 
     const restored: MapGraph = JSON.parse(JSON.stringify(am.graph));
     expect(restored).toEqual(am.graph);
+    expect(restored.rooms['pantry'].floor).toBe(3);
+    expect(restored.rooms['pantry'].floorLocked).toBe(true);
 
     const am2 = new Automapper(restored);
     am2.handleEvent(cmd('south', 2));
@@ -794,5 +798,82 @@ describe('UX-18: mentioned directions', () => {
     // Detection never un-records a mention — filtering it once a real edge exists is
     // the UI hook's job (useSuggestedExits), not the graph's.
     expect(am.graph.rooms['kitchen'].mentionedDirections).toEqual(['w']);
+  });
+});
+
+describe('Batch 4: room floors', () => {
+  it('gives the first room of a fresh game floor 0', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Kitchen', 0));
+    expect(am.graph.rooms['kitchen'].floor).toBe(0);
+  });
+
+  it('infers floor +1 on up, floor -1 on down, and stacks further moves', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Cellar Stairs', 0));
+    am.handleEvent(cmd('up', 1));
+    am.handleEvent(status('Kitchen', 1));
+    expect(am.graph.rooms['kitchen'].floor).toBe(1);
+
+    am.handleEvent(cmd('up', 2));
+    am.handleEvent(status('Attic', 2));
+    expect(am.graph.rooms['attic'].floor).toBe(2);
+
+    const am2 = new Automapper();
+    am2.handleEvent(status('Kitchen', 0));
+    am2.handleEvent(cmd('down', 1));
+    am2.handleEvent(status('Cellar', 1));
+    expect(am2.graph.rooms['cellar'].floor).toBe(-1);
+  });
+
+  it('does not assign or change floor on in/out moves', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Behind House', 0));
+    am.handleEvent(cmd('in', 1));
+    am.handleEvent(status('Kitchen', 1));
+    expect(am.graph.rooms['kitchen'].floor).toBeUndefined();
+
+    am.handleEvent(cmd('out', 2));
+    am.handleEvent(status('Behind House', 2));
+    expect(am.graph.rooms['behind-house'].floor).toBe(0); // first room only, from bootstrap
+  });
+
+  it('never overwrites an already floor-assigned room, even on a conflicting up/down arrival', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Landing', 0));
+    am.handleEvent(cmd('up', 1));
+    am.handleEvent(status('Loft', 1)); // Loft -> floor 1 via this staircase
+
+    // A second, convergent staircase also leads to Loft, but from a room two floors up —
+    // a naive relative computation would say floor 3; the already-assigned floor 1 wins.
+    am.handleEvent(cmd('up', 2));
+    am.handleEvent(status('High Tower', 2));
+    am.handleEvent(cmd('up', 3));
+    am.handleEvent(status('Higher Tower', 3));
+    am.handleEvent(cmd('down', 4));
+    am.handleEvent(status('Loft', 4));
+
+    expect(am.graph.rooms['loft'].floor).toBe(1);
+  });
+
+  it('setRoomFloor locks the floor so a later auto-inference leaves it untouched', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Landing', 0));
+    am.handleEvent(cmd('up', 1));
+    am.handleEvent(status('Loft', 1));
+
+    setRoomFloor(am.graph, 'loft', 9);
+    expect(am.graph.rooms['loft'].floor).toBe(9);
+    expect(am.graph.rooms['loft'].floorLocked).toBe(true);
+
+    // Revisit via a fresh up-move from a different, floor-0 room: inference must not fire.
+    const am2 = new Automapper(am.graph);
+    am2.handleEvent(cmd('down', 2)); // leave Loft
+    am2.handleEvent(status('Landing', 2));
+    am2.handleEvent(cmd('up', 3));
+    am2.handleEvent(status('Loft', 3));
+
+    expect(am2.graph.rooms['loft'].floor).toBe(9);
+    expect(am2.graph.rooms['loft'].floorLocked).toBe(true);
   });
 });

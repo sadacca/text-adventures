@@ -41,21 +41,53 @@ interface ViewBox {
   height: number;
 }
 
-/** One line per room pair: solid if either direction is confirmed, dashed otherwise. */
-function buildSegments(graph: MapGraph): Segment[] {
+/** Batch 4 / UX-21: a cross-floor up/down edge, rendered as a small tappable pill at the
+ *  source room's position instead of a line stretching toward a room on another floor
+ *  that isn't drawn here. `label` is signed relative to the floor currently on screen
+ *  (e.g. "↑ +1"); tapping switches the view to `otherFloor`. */
+interface FloorStub {
+  key: string;
+  roomId: string;
+  x: number;
+  y: number;
+  label: string;
+  otherFloor: number;
+}
+
+/** One line per room pair on `displayFloor`: solid if either direction is confirmed,
+ *  dashed otherwise. Batch 4 / UX-21: edges crossing to a different floor never become a
+ *  line (there'd be nothing on-screen to draw it to) — they become `FloorStub`s instead. */
+function buildSegments(
+  graph: MapGraph,
+  displayFloor: number,
+): { segments: Segment[]; stubs: FloorStub[] } {
   const byPair = new Map<string, RoomEdge>();
+  const stubByKey = new Map<string, RoomEdge>();
   for (const edge of graph.edges) {
     if (edge.userDeleted) continue;
     const a = graph.rooms[edge.from];
     const b = graph.rooms[edge.to];
     if (!a || !b) continue;
+    const aFloor = a.floor ?? 0;
+    const bFloor = b.floor ?? 0;
+    if (aFloor !== bFloor) {
+      if (aFloor !== displayFloor || !isStubDirection(edge.dir)) continue;
+      const key = `${edge.from}|${edge.dir}`;
+      const existing = stubByKey.get(key);
+      if (!existing || (existing.status === 'inferred' && edge.status === 'confirmed')) {
+        stubByKey.set(key, edge);
+      }
+      continue;
+    }
+    if (aFloor !== displayFloor) continue;
     const key = [edge.from, edge.to].sort().join('|');
     const existing = byPair.get(key);
     if (!existing || (existing.status === 'inferred' && edge.status === 'confirmed')) {
       byPair.set(key, edge);
     }
   }
-  return [...byPair.entries()].map(([key, edge]) => {
+
+  const segments = [...byPair.entries()].map(([key, edge]) => {
     const a = graph.rooms[edge.from];
     const b = graph.rooms[edge.to];
     const custom = !isCompassDirection(edge.dir);
@@ -70,6 +102,23 @@ function buildSegments(graph: MapGraph): Segment[] {
       label: custom || isStubDirection(edge.dir) ? edge.dir : undefined,
     };
   });
+
+  const stubs = [...stubByKey.values()].map((edge) => {
+    const a = graph.rooms[edge.from];
+    const otherFloor = graph.rooms[edge.to].floor ?? 0;
+    const sign = otherFloor - displayFloor;
+    const arrow = edge.dir === 'up' ? '↑' : edge.dir === 'down' ? '↓' : edge.dir;
+    return {
+      key: `${edge.from}|${edge.dir}`,
+      roomId: edge.from,
+      x: a.pos.x * UNIT,
+      y: a.pos.y * UNIT,
+      label: `${arrow} ${sign > 0 ? '+' : ''}${sign}`,
+      otherFloor,
+    };
+  });
+
+  return { segments, stubs };
 }
 
 function fitViewBox(rooms: RoomNode[]): ViewBox {
@@ -105,9 +154,27 @@ export function MapScreen() {
   const graph = useMapStore((s) => s.graph);
   const moveRoom = useMapStore((s) => s.moveRoom);
 
-  const rooms = useMemo(() => Object.values(graph.rooms), [graph]);
-  const segments = useMemo(() => buildSegments(graph), [graph]);
-  const roomsById = useMemo(() => new Map(rooms.map((r) => [r.id, r])), [rooms]);
+  const allRooms = useMemo(() => Object.values(graph.rooms), [graph]);
+  const roomsById = useMemo(() => new Map(allRooms.map((r) => [r.id, r])), [allRooms]);
+  // Batch 4 / UX-21: multi-level maps. `activeFloor` null = auto-follow the current
+  // room's floor; a number = the player manually browsed to another floor.
+  const floors = useMemo(
+    () => [...new Set(allRooms.map((r) => r.floor ?? 0))].sort((a, b) => a - b),
+    [allRooms],
+  );
+  const currentFloor = roomsById.get(graph.currentRoomId ?? '')?.floor ?? 0;
+  const activeFloor = useUiStore((s) => s.activeFloor);
+  const setActiveFloor = useUiStore((s) => s.setActiveFloor);
+  const displayFloor = activeFloor ?? currentFloor;
+
+  const rooms = useMemo(
+    () => allRooms.filter((r) => (r.floor ?? 0) === displayFloor),
+    [allRooms, displayFloor],
+  );
+  const { segments, stubs } = useMemo(
+    () => buildSegments(graph, displayFloor),
+    [graph, displayFloor],
+  );
 
   const [viewBox, setViewBox] = useState<ViewBox | null>(null);
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
@@ -133,13 +200,17 @@ export function MapScreen() {
   } | null>(null);
 
   // Re-fit once per game (fresh load), not on every graph mutation — see doc comment.
+  // Batch 4 / UX-21: also resets activeFloor to auto-follow, so switching games never
+  // strands the view on a stale floor number from the previous game.
   useEffect(() => {
-    if (rooms.length === 0 || lastFitGameId.current === gameId) return;
+    if (allRooms.length === 0 || lastFitGameId.current === gameId) return;
     lastFitGameId.current = gameId;
-    setViewBox(fitViewBox(rooms));
+    setActiveFloor(null);
+    const floor = roomsById.get(graph.currentRoomId ?? '')?.floor ?? 0;
+    setViewBox(fitViewBox(allRooms.filter((r) => (r.floor ?? 0) === floor)));
     setTransform({ x: 0, y: 0, scale: 1 });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally once per gameId
-  }, [gameId, rooms.length]);
+  }, [gameId, allRooms.length]);
 
   useEffect(() => {
     if (!toast) return;
@@ -304,7 +375,7 @@ export function MapScreen() {
     );
   }
 
-  if (rooms.length === 0 || !viewBox) {
+  if (allRooms.length === 0 || !viewBox) {
     return (
       <div className="screen">
         <h1>Map</h1>
@@ -324,9 +395,31 @@ export function MapScreen() {
     <div className="screen map-screen">
       <div className="map-header">
         <h1>Map</h1>
-        <button type="button" className="tap-target" onClick={fitToContent}>
-          ⤢ Fit
-        </button>
+        <div className="map-header-controls">
+          {floors.length > 1 && (
+            <div className="floor-switcher" role="toolbar" aria-label="Floor">
+              {floors.map((floor) => (
+                <button
+                  key={floor}
+                  type="button"
+                  className="chip tap-target floor-chip"
+                  aria-pressed={floor === displayFloor}
+                  onClick={() => setActiveFloor(floor)}
+                >
+                  {floor === 0 ? 'Ground' : floor > 0 ? `+${floor}` : `${floor}`}
+                </button>
+              ))}
+            </div>
+          )}
+          {activeFloor !== null && activeFloor !== currentFloor && (
+            <button type="button" className="tap-target" onClick={() => setActiveFloor(null)}>
+              ↩ Current floor
+            </button>
+          )}
+          <button type="button" className="tap-target" onClick={fitToContent}>
+            ⤢ Fit
+          </button>
+        </div>
       </div>
       {toast && <div className="map-toast">{toast}</div>}
       <svg
@@ -362,6 +455,22 @@ export function MapScreen() {
                   {seg.label}
                 </text>
               )}
+            </g>
+          ))}
+          {stubs.map((stub) => (
+            <g
+              key={stub.key}
+              className="map-floor-stub"
+              transform={`translate(${stub.x}, ${stub.y - ROOM_H / 2 - 16})`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Go to floor ${stub.otherFloor}`}
+              onClick={() => setActiveFloor(stub.otherFloor)}
+            >
+              <rect x={-24} y={-11} width={48} height={22} rx={11} />
+              <text x={0} y={0} textAnchor="middle" dominantBaseline="middle">
+                {stub.label}
+              </text>
             </g>
           ))}
           {rooms.map((room) => {

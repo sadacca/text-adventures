@@ -25,6 +25,14 @@ export interface RoomNode {
    * the other is evidence of a text-ambiguous merge (see resolveRoomOnArrival).
    */
   blockedDirections?: Direction[];
+  /** Batch 4 / UX-20: which level this room is on, relative to the game's first room
+   *  (floor 0). undefined means "never assigned" — treat as 0 everywhere it's read.
+   *  Auto-inferred from up/down moves (see Automapper.applyFloor); sticky once set,
+   *  whether by inference or by the user (floorLocked), same as posLocked/rule 7. */
+  floor?: number;
+  /** True once a user edits floor directly (RoomEditSheet, UX-21) — the automapper must
+   *  never overwrite a floorLocked room's floor afterward. */
+  floorLocked?: boolean;
 }
 
 export interface RoomEdge {
@@ -434,6 +442,15 @@ export function moveRoom(graph: MapGraph, id: string, pos: { x: number; y: numbe
   room.posLocked = true;
 }
 
+/** Batch 4 / UX-21's RoomEditSheet field calls this. Locks the floor so the automapper
+ *  never re-infers over it (rule 7 — same contract as moveRoom/posLocked). */
+export function setRoomFloor(graph: MapGraph, id: string, floor: number): void {
+  const room = graph.rooms[id];
+  if (!room) return;
+  room.floor = floor;
+  room.floorLocked = true;
+}
+
 type Pending =
   { kind: 'move'; dir: Direction } | { kind: 'other'; label: string } | { kind: 'initial' };
 
@@ -484,6 +501,30 @@ export class Automapper {
     if (found.length === 0) return;
     const merged = new Set([...(room.mentionedDirections ?? []), ...found]);
     room.mentionedDirections = ALL_DIRECTIONS.filter((d) => merged.has(d));
+  }
+
+  /**
+   * Batch 4 / UX-20: auto-infers `destRoom.floor` from the move that reached it. Never
+   * overwrites an already-assigned floor (whether set by an earlier inference or a user
+   * edit via `setRoomFloor`) — two staircases between the same two floors might disagree
+   * with a naive relative computation, and sticky-once-set is the same "never destroy
+   * established data" policy used elsewhere in this file. Only `up`/`down` imply a level
+   * change (deliberate scope decision — `in`/`out` don't, per IF convention: Zork's own
+   * house stays on one floor whether you're in or out of it).
+   */
+  private applyFloor(
+    fromId: string | null,
+    compassDir: Direction | null,
+    destRoom: RoomNode,
+  ): void {
+    if (destRoom.floor !== undefined) return;
+    if (fromId == null) {
+      destRoom.floor = 0; // first room of the game, or a teleport with no origin
+      return;
+    }
+    if (compassDir !== 'up' && compassDir !== 'down') return;
+    const fromFloor = this.graph.rooms[fromId]?.floor ?? 0;
+    destRoom.floor = fromFloor + (compassDir === 'up' ? 1 : -1);
   }
 
   /**
@@ -581,6 +622,7 @@ export class Automapper {
       normalized,
       arrival.description,
     );
+    this.applyFloor(null, null, room);
     if (pending.kind === 'other') room.flags.teleportTarget = true;
     this.graph.currentRoomId = room.id;
   }
@@ -595,6 +637,7 @@ export class Automapper {
     const from = fromId === UNKNOWN_ROOM_ID ? null : fromId;
     const compassDir = isCompassDirection(dir) ? dir : null;
     const destRoom = resolveRoomOnArrival(this.graph, from, dir, compassDir, destName, description);
+    this.applyFloor(from, compassDir, destRoom);
     // A real self-loop exit ("north leads back here") says nothing about the opposite
     // direction, so no reverse is inferred for it.
     const inferReverse = compassDir != null && destRoom.id !== from;

@@ -1116,6 +1116,19 @@ must pass completely unmodified, since nothing reads `RoomNode.floor` until UX-2
 **5. Docs:** dated SPECS.md note under §1 (RoomNode shape) describing `floor`/
 `floorLocked` and the up/down-only, sticky-once-set inference rule.
 
+**Outcome (2026-07-16): done, implemented exactly as specced.** `RoomNode` gained
+`floor`/`floorLocked`; `Automapper.applyFloor` (`src/map/graph.ts`) is called from both
+`handleMovement` and the true-teleport bootstrap path in `handleStatusLine`, exactly per
+the sketch above — up/down-only inference, sticky-once-set (guarded by
+`destRoom.floor !== undefined`, which covers both the auto-inferred and user-locked
+cases without needing a separate `floorLocked` check). `setRoomFloor` added to
+`graph.ts` and wired through as a `mapStore.setRoomFloor(id, floor)` action, mirroring
+`moveRoom`'s shape. New `describe('Batch 4: room floors', ...)` in `tests/graph.test.ts`
+covers every case in the test list above, plus the JSON round-trip test was extended
+with a `floor`/`floorLocked` room. `npm run lint`, `npm test` (all pre-existing suites,
+including `tests/layout.test.ts`/`tests/travelTo.test.ts`, unmodified and passing), and
+`npm run build` all pass.
+
 ---
 
 ### UX-21: Floor-aware map rendering + switcher UI [visual check]
@@ -1215,6 +1228,50 @@ explored, confirm the edge renders as a labeled stub/button rather than a line s
 off-canvas, confirm tapping it switches floors, confirm the RoomEditSheet's new Floor
 field edits persist across reload (IndexedDB round-trip via the existing `saveMap`
 debounce). Check chip/pill legibility in light, dark, and retro themes.
+
+**Outcome (2026-07-16): done, implemented exactly as specced.** `layout.ts`'s
+`computeLayout` now groups rooms by `floor ?? 0` and calls a private `layoutFloor`
+(the original BFS/collision algorithm, unchanged) once per floor; `neighborsOf` gained a
+`floor` parameter and skips any edge whose destination isn't on that floor (a crossing
+edge is only skipped for layout purposes — never removed from `graph.edges`).
+`uiStore.activeFloor`/`setActiveFloor` added as session-only state (not persisted, same
+as `roomEditTarget`). `MapScreen.tsx` derives `floors`/`currentFloor`/`displayFloor`,
+filters rendered rooms to `displayFloor`, and `buildSegments` now returns both
+same-floor `segments` and cross-floor `stubs` (small tappable pills at the source
+room's position, labeled e.g. "↑ +1"/"↓ −1", `onClick` calls `setActiveFloor`). The
+floor switcher (one chip per floor, "Ground" for 0) only renders once `floors.length >
+1`; a "↩ Current floor" button appears whenever the player has manually browsed away
+from their actual current floor; both live in the existing `.map-header`.
+`RoomEditSheet.tsx` gained a numeric Floor field calling the new `mapStore.setRoomFloor`
+action. `activeFloor` resets to `null` (auto-follow) whenever `gameId` changes, folded
+into the existing once-per-game re-fit effect.
+
+New coverage: `tests/layout.test.ts` gained a two-floor case asserting each floor lays
+out independently and can freely reuse the other floor's coordinates; a new
+`tests/mapScreen.test.tsx` (no prior `MapScreen` render test existed) covers the floor
+switcher's absence/presence, floor-chip tap changing which rooms render, the
+current-floor return control's appear/disappear, and the cross-floor stub's presence and
+click. `npm run lint`, `npm test` (145 tests, all green), `tsc -b`, and `npm run build`
+all pass.
+
+**Live verification** (390×844, real Bocfel + the bundled `zork1.z3`, driven via
+Playwright): West of House → n → n (Forest Path) → `up` (climbs the tree, arrives "Up a
+Tree" — confirmed by the egg/nest description) → Map tab: floor switcher shows exactly
+`Ground`/`+1`, auto-following to floor +1 (the player's actual floor); the ground-floor
+`down` edge from "Up a Tree" renders as a "↓ -1" stub, not a line to an undrawn room;
+dispatching a click on the stub correctly flips `activeFloor` to 0, re-renders the Ground
+floor's rooms, and shows the "↩ Current floor" button (screenshotted); the RoomEditSheet
+Floor field read the correct initial value and, after being set and blurred, persisted
+across a full page reload (IndexedDB round-trip via `saveMap`'s debounce) — confirmed by
+the floor switcher still showing 2 floors post-reload. One environment-specific wrinkle
+found and **not** a product bug: Playwright's synthetic `.click()`/`{force:true}` on the
+stub's SVG `<g>` intercepted `elementFromPoint` correctly but didn't reliably fire
+React's `onClick` in this headless run; a raw `dispatchEvent(new MouseEvent('click',
+{bubbles:true}))` at the same coordinates fired it every time with the exact expected
+state transition, and the jsdom-based `fireEvent.click` in `tests/mapScreen.test.tsx`
+(same dispatch mechanism) passes reliably — real touch/mouse input goes through the
+normal browser event path this exercises, not Playwright's synthetic one, so this is
+scoped to the verification harness, not the shipped code.
 
 ---
 

@@ -24,6 +24,11 @@ export interface UiState {
    *  closed. Lifted out of MapScreen's local state so the Android back-button trap
    *  (backButton.ts) can close it without React involvement. */
   roomEditTarget: string | null;
+  /** Batch 4 / UX-21: which floor MapScreen shows. null = auto-follow the current
+   *  room's floor; a number = the player manually switched and stays there until they
+   *  tap back to auto-follow or load a different game. Session-only, not persisted —
+   *  same as roomEditTarget. */
+  activeFloor: number | null;
   setTab: (tab: Tab) => void;
   setCommandDraft: (draft: string) => void;
   appendToDraft: (word: string) => void;
@@ -35,6 +40,7 @@ export interface UiState {
   pushCommandHistory: (text: string) => void;
   setRoomEditTarget: (id: string | null) => void;
   dismissTapHint: () => void;
+  setActiveFloor: (floor: number | null) => void;
 }
 
 /**
@@ -72,6 +78,7 @@ export const useUiStore = create<UiState>()(
       commandHistory: [],
       hasSeenTapHint: false,
       roomEditTarget: null,
+      activeFloor: null,
       setTab: (tab) => set({ tab }),
       setCommandDraft: (commandDraft) => set({ commandDraft }),
       appendToDraft: (word) =>
@@ -90,6 +97,7 @@ export const useUiStore = create<UiState>()(
         })),
       setRoomEditTarget: (roomEditTarget) => set({ roomEditTarget }),
       dismissTapHint: () => set({ hasSeenTapHint: true }),
+      setActiveFloor: (activeFloor) => set({ activeFloor }),
     }),
     persistOptions,
   ),
