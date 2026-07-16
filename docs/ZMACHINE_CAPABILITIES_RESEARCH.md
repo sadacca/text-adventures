@@ -28,6 +28,10 @@ itself.
 
 ### 1. Step-back "Undo last move"
 
+**Promoted 2026-07-16 (owner-approved) → `MOBILE_UX_TODO_2.md` Batch 5, UX-22.** Scoped
+and specced there at full implementation precision; this section stays as the research
+rationale.
+
 **The infrastructure for this already exists and is unused.** `writeAutosaveGeneration`
 (`src/storage/autosaves.ts:13`) keeps the **3 most recent** autosave generations per
 game (`KEEP_GENERATIONS = 3`), each tagged with its turn number — but `getLatestAutosave`
@@ -59,6 +63,10 @@ and how this interacts with the "One playthrough per game" decision in `SPECS.md
 undo is not a new playthrough, so it should feel like free, cheap, non-committal review —
 much lower friction than the existing Restart confirm-dialog).
 
+(These open questions were resolved during scoping, not left for the implementer:
+UX-22 is single-step only, and explicitly does not roll back the automapper graph — see
+that task's scope-decision note.)
+
 ### 2. OOPS-aware typo correction chip
 
 Many Infocom/Inform games implement an `OOPS <word>` convention: after a parser error
@@ -86,6 +94,12 @@ that the *game* recognized as unknown — not for logically-wrong commands.
 ## Tier 2 — real gaps in interaction model, bigger lift, high payoff for specific games
 
 ### 3. Text styling passthrough (bold / italic / reverse video / fixed-pitch)
+
+**Promoted 2026-07-16 (owner-approved) → `MOBILE_UX_TODO_2.md` Batch 5, UX-23**, scoped
+down to reverse-video + emphasized/italic only (bold and fixed-pitch deferred — see that
+task). Confirmed during scoping that the wire protocol already carries per-run
+`style`/`css_styles` data (asyncglk's `TextRun` type) that `protocol-tap.ts` currently
+discards — this is a real, actionable gap, not speculative.
 
 The Z-machine has a `set_text_style` opcode (roman, reverse, bold, italic, fixed-pitch)
 and a `set_font` opcode, and games use them *narratively*, not just cosmetically:
@@ -133,17 +147,29 @@ scoping, not folded into an existing batch.
 
 ### 5. Timed input (real-time games)
 
+**Promoted 2026-07-16 (owner-approved) → `MOBILE_UX_TODO_2.md` Batch 5, UX-24.**
+**Correction from this section's original write-up, found during scoping:** the claim
+below that idle time "just stays idle" was wrong. Checked against asyncglk's actual
+`GlkOteBase` source (the vendored submodule) while scoping the task: the low-level Glk
+timer loop — reading a `timer` interval off `StateUpdate`, running `setInterval`, and
+firing `send_event({type:'timer'})` — is already fully implemented there and runs
+unmodified through `BridgeGlkOte.update()`'s `super.update(data)` call today. The real
+open question, deferred to UX-24's own investigation phase, is narrower: whether text an
+interrupt prints while input is still outstanding reaches the transcript promptly, not
+whether timers fire at all. Border Zone (1987, the first Z-machine v5 release) is the
+documented flagship case — the original ZIP interpreter needed dedicated support for its
+timeouts.
+
 `@read`/`@read_char` support an optional timeout + interrupt routine (v4+): the game
 gets to run code (and print text) while waiting for input, then re-prompt. This drives
-Deadline's ringing phone, Border Zone's real-time spy sequences, and Trinity's
-countdown-while-idle text. Today `BridgeGlkOte` only ever issues plain (untimed)
-line/char requests, so on the games that rely on this, idle time simply... stays idle —
-no missed phone call, no countdown pressure, arguably a *worse* experience than intended
-on those specific titles since the tension mechanic silently doesn't fire. Lower
-priority than items above (a small number of titles depend on it, and Bocfel's WASM
-build support for the timer callback would need to be confirmed before scoping), but
-worth a line item since it's a correctness gap, not just a missing nicety, for the games
-it affects.
+Border Zone's real-time spy sequences, and reportedly similar tension mechanics in a
+handful of other titles (Deadline/Trinity's exact mechanisms weren't independently
+confirmed to use this specific opcode path — treat those as unverified until checked,
+Border Zone is the solid case). Lower priority than items above (a small number of
+titles depend on it), but worth a line item since — per the correction above — this is
+narrower and more tractable than it first looked, and any actual gap here is a
+correctness bug (a countdown appearing late/misattributed) for the games it affects, not
+just a missing nicety.
 
 ### 6. Hyperlink-driven choices
 
@@ -173,11 +199,14 @@ gets emphasized later.
 
 ## Suggested next step
 
-Owner review, same as the existing appendix: pick which of the above (if any) gets
-promoted to a scoped batch task, `UX-`-numbered and specced at the same
-file-and-line precision as `MOBILE_UX_TODO_2.md`'s existing tasks, before any
-implementation starts. Item 1 (Undo) is the strongest "small effort, high delight"
-candidate — the storage layer already does the hard part.
+**Update (2026-07-16): resolved.** Owner reviewed this doc plus its addendum below and
+promoted three items to specced tasks in `MOBILE_UX_TODO_2.md`'s new Batch 5: item 1
+(Undo → UX-22), item 3 (text styling → UX-23), and item 5 (timed input → UX-24). Item 2
+(OOPS typo fix) and item 4 (V6 mouse/graphics) were not promoted this round — still open
+for a future pass, item 4 explicitly flagged as needing its own scoping session rather
+than a normal task. Addendum items G (TTS) and H (transcript export) were reviewed and
+explicitly NOT promoted (owner: TTS is "a potential reach," transcript export "seems
+less useful") — both remain recorded below for a possible later look, not scheduled.
 
 ---
 
