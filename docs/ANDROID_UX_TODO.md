@@ -428,39 +428,55 @@ after ~2.5s (`.score-toast` count 0). Re-checked with `theme: 'dark'` and a seco
 and the increase-only/reset-on-`openGame` logic are covered by
 `tests/scoreDelta.test.ts`.
 
-**Revisit (2026-07-16): owner reported the toast and haptic weren't standing out in
-user testing.** Two independent fixes, both in `StoryScreen.tsx`/`App.css`, no store
-logic touched:
-- **Visual**: `.score-toast` changed from the neutral outline-pill look it shared with
-  `.new-text-pill` (`--bg-elevated` fill, thin border, 13px text) to a solid
-  `var(--accent)`-filled pill with `var(--accent-contrast)` text, 15px/700 weight, plus a
-  `★` icon (`aria-hidden`, so screen readers still just hear "+N"). It's now also
-  animated — a pop-in (`@keyframes score-toast-in`, overshoot easing) and a fade-out
-  timed via `animation-delay` to finish exactly as the existing `SCORE_TOAST_MS` (2500ms)
-  JS timer removes it, so no second timer/state flag was needed (an initial version used
-  a `scoreToastLeaving` state flag set synchronously inside the `useEffect`, which
-  `eslint-plugin-react-hooks`'s `set-state-in-effect` rule correctly flagged — moving the
-  exit fade into a second CSS `@keyframes` on the same `animation` shorthand was both the
-  lint fix and the simpler implementation). Respects `prefers-reduced-motion`.
-- **Haptic**: the pattern changed from `[20, 40, 20]` to `[30, 40, 30, 40, 60]` —
-  noticeably longer and more rhythmic than the plain 10ms tap-acknowledgment buzz used
-  everywhere else in the app, so when it does fire it reads as a distinct "reward" pulse
-  rather than blending into ordinary interaction feedback.
-- **Known, unfixable limitation, not addressed here**: iOS Safari has never implemented
-  the Vibration API (`navigator.vibrate`, `src/haptics.ts`) — it's a silent no-op there by
-  design, even for an installed PWA. No haptic pattern change fixes this; it's the reason
-  the visual fix above matters more than the haptic one for any iOS tester. A native
-  wrapper (Capacitor, README's Phase 4) could get real iOS haptics later; out of scope
-  for this web app.
+**Revisit 1 (2026-07-16): owner reported the toast and haptic weren't standing out in
+user testing.** Restyled `.score-toast` as a solid `var(--accent)`-filled pill with a
+`★` icon and pop-in/fade-out animation, and lengthened the haptic pattern to
+`[30, 40, 30, 40, 60]`. **Superseded by Revisit 2 below the same day** — the pill read as
+too showy in further testing. Kept in the history for the record; do not reintroduce
+`.score-toast`/`.new-text-pill`-style floating pill treatment for this feature without a
+fresh owner call.
+
+**Revisit 2 (2026-07-16, same day): owner asked for something more discreet, plus a
+report that haptics still weren't perceptible on an Android browser.** Two changes,
+`StoryScreen.tsx`/`App.css`/`index.css`, no store logic touched:
+- **Visual, replacing Revisit 1's pill entirely**: the score change is now a small right-
+  aligned bold-green line of plain text (`.score-callout`, new `--success` token added to
+  `index.css` per theme) directly under `.status-line`'s score/moves text — no
+  background, border, shadow, or icon, and no longer absolutely positioned over the
+  transcript (it's back in normal document flow, moved out of `.story-body`). Only a
+  quick 150ms opacity fade-in, no bounce/scale, respects `prefers-reduced-motion`. Retro's
+  `--success` deliberately reuses `--text`'s own bright green (that theme is already
+  all-green) — bold weight plus the callout's position under the status line is what
+  reads as distinct there, not a hue change.
+- **Haptic — root cause diagnosed, not fixable in this codebase**: researched Chromium's
+  actual behavior (chromium bug trackers 41361876, 40512244, MDN) rather than guessing.
+  `navigator.vibrate()` on Chrome/Android requires the call to happen with "transient user
+  activation" — synchronously inside the click/tap event handler that the user just fired.
+  Every *other* `haptic()` call site in this app (`CommandBar`, `CompassRose`,
+  `ExitsRow`, `VerbChips`, `TapWords`, `MapScreen`) is called directly inside an
+  `onClick`/`onPointerDown` handler and satisfies this. The score-toast's `haptic()` call
+  does not: it fires from a `useEffect` reacting to `scoreDelta`, which traces back to a
+  `status_line` engine event that arrives asynchronously (after a WASM round-trip)
+  relative to whatever tap sent the command — Chrome silently drops it. This is a real
+  platform constraint, not a bug in this app's code, and there is no JS-only workaround:
+  vibration genuinely cannot be triggered from an async callback on Chrome/Android,
+  by design (anti-abuse). Left the `haptic()` call in place (harmless no-op when blocked,
+  consistent with `haptics.ts`'s existing "best-effort" contract) rather than removing it,
+  documented the limitation in a code comment at the call site, and leaned harder on the
+  visual fix above instead. Combined with the pre-existing iOS Safari gap (Vibration API
+  not implemented there at all), **haptic feedback for the score event specifically is
+  now known-unreliable on both major mobile platforms, for two different platform
+  reasons** — a native wrapper (Capacitor, README's Phase 4) would fix both, since native
+  code isn't subject to either browser restriction. Confirms the owner's own hypothesis
+  ("maybe needs to be in an app?").
 
 Live-verified (2026-07-16, Playwright at 390×844, `npm run build && npm run preview`,
-real Chromium, against the bundled `zork1.z3`): injected a `.score-toast` element
-directly (the store-poke technique above still works for state, but the visual/CSS
-change is what needed checking) and screenshotted all three themes — the solid
-accent-fill pill with the star icon is clearly legible and visually distinct from the
-surrounding chrome in light, dark, and retro alike, including retro's amber-on-black
-accent color. `npm run lint`/`npm test` (145 tests)/`npm run format`/`npm run build` all
-pass.
+real Chromium, against the bundled `zork1.z3`): injected a `.score-callout` element
+directly after `.status-line` and screenshotted all three themes — a small bold green
+"+10" sits legibly right under the score in light (dark green on light gray), dark
+(bright mint-green on near-black), and retro (bright green, same hue as retro's own text
+but bold and positioned distinctly) alike, with no floating/overlay chrome anywhere.
+`npm run lint`/`npm test` (145 tests)/`npm run format`/`npm run build` all pass.
 
 ### UX-12: Long-press a word to examine it — done (2026-07-14)
 

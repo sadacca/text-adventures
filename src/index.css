@@ -7,6 +7,7 @@
   --accent: #3b6fe0;
   --accent-contrast: #ffffff;
   --danger: #c0392b;
+  --success: #1a7f37;
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   --danger-soft: color-mix(in srgb, var(--danger) 12%, transparent);
   --tab-bar-height: 56px;
@@ -47,6 +48,7 @@
   --border: #33363f;
   --accent: #7ba8ff;
   --accent-contrast: #0b1220;
+  --success: #4ade80;
 }
 
 :root[data-theme='retro'] {
@@ -57,6 +59,9 @@
   --border: #1d9944;
   --accent: #ffbf00;
   --accent-contrast: #0d0d0d;
+  /* Same hue as --text (retro is already all-green) — bold weight is what sets the
+     callout apart here, not a color shift, since a second green would just blend in. */
+  --success: #33ff66;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -68,6 +73,7 @@
     --border: #33363f;
     --accent: #7ba8ff;
     --accent-contrast: #0b1220;
+    --success: #4ade80;
   }
 }
 
