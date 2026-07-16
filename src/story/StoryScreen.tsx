@@ -9,7 +9,8 @@ import { TapWords } from './TapWords';
 import { DebugConsole } from '../debug/DebugConsole';
 import { haptic } from '../haptics';
 
-/** UX-11: how long the score toast stays up before it auto-dismisses. */
+/** UX-11: how long the score toast stays up before it auto-dismisses. Must stay in sync
+ *  with .score-toast's CSS exit-animation delay (App.css) — see the comment there. */
 const SCORE_TOAST_MS = 2500;
 
 /** Player is considered "pinned" to the bottom within this many px of scrollHeight. */
@@ -33,10 +34,16 @@ export function StoryScreen() {
 
   // UX-11: toast a score increase, then auto-dismiss. Keyed on the whole scoreDelta
   // object, so a new delta (even an equal amount) cancels any pending dismiss and
-  // restarts the timer/haptic instead of being swallowed by the old one.
+  // restarts the timer/haptic instead of being swallowed by the old one. A more
+  // deliberately "reward"-shaped haptic pattern (longer, three pulses) than the 10ms
+  // tap-acknowledgment buzz used everywhere else in the app — user testing found the
+  // original [20, 40, 20] pattern felt indistinguishable from an ordinary tap. The
+  // entrance/exit fade is pure CSS (.score-toast's animation, App.css) rather than a
+  // second timer/state flag here, so its exit-animation delay must stay in sync with
+  // SCORE_TOAST_MS — see the comment alongside that rule.
   useEffect(() => {
     if (!scoreDelta) return;
-    haptic([20, 40, 20]);
+    haptic([30, 40, 30, 40, 60]);
     const timer = setTimeout(() => {
       useEngineStore.setState({ scoreDelta: null });
     }, SCORE_TOAST_MS);
@@ -129,7 +136,7 @@ export function StoryScreen() {
         </div>
         {scoreDelta && (
           <div key={scoreDelta.id} className="score-toast" aria-live="polite">
-            +{scoreDelta.amount}
+            <span aria-hidden="true">★</span> +{scoreDelta.amount}
           </div>
         )}
         {newBelow && (

@@ -428,6 +428,40 @@ after ~2.5s (`.score-toast` count 0). Re-checked with `theme: 'dark'` and a seco
 and the increase-only/reset-on-`openGame` logic are covered by
 `tests/scoreDelta.test.ts`.
 
+**Revisit (2026-07-16): owner reported the toast and haptic weren't standing out in
+user testing.** Two independent fixes, both in `StoryScreen.tsx`/`App.css`, no store
+logic touched:
+- **Visual**: `.score-toast` changed from the neutral outline-pill look it shared with
+  `.new-text-pill` (`--bg-elevated` fill, thin border, 13px text) to a solid
+  `var(--accent)`-filled pill with `var(--accent-contrast)` text, 15px/700 weight, plus a
+  `★` icon (`aria-hidden`, so screen readers still just hear "+N"). It's now also
+  animated — a pop-in (`@keyframes score-toast-in`, overshoot easing) and a fade-out
+  timed via `animation-delay` to finish exactly as the existing `SCORE_TOAST_MS` (2500ms)
+  JS timer removes it, so no second timer/state flag was needed (an initial version used
+  a `scoreToastLeaving` state flag set synchronously inside the `useEffect`, which
+  `eslint-plugin-react-hooks`'s `set-state-in-effect` rule correctly flagged — moving the
+  exit fade into a second CSS `@keyframes` on the same `animation` shorthand was both the
+  lint fix and the simpler implementation). Respects `prefers-reduced-motion`.
+- **Haptic**: the pattern changed from `[20, 40, 20]` to `[30, 40, 30, 40, 60]` —
+  noticeably longer and more rhythmic than the plain 10ms tap-acknowledgment buzz used
+  everywhere else in the app, so when it does fire it reads as a distinct "reward" pulse
+  rather than blending into ordinary interaction feedback.
+- **Known, unfixable limitation, not addressed here**: iOS Safari has never implemented
+  the Vibration API (`navigator.vibrate`, `src/haptics.ts`) — it's a silent no-op there by
+  design, even for an installed PWA. No haptic pattern change fixes this; it's the reason
+  the visual fix above matters more than the haptic one for any iOS tester. A native
+  wrapper (Capacitor, README's Phase 4) could get real iOS haptics later; out of scope
+  for this web app.
+
+Live-verified (2026-07-16, Playwright at 390×844, `npm run build && npm run preview`,
+real Chromium, against the bundled `zork1.z3`): injected a `.score-toast` element
+directly (the store-poke technique above still works for state, but the visual/CSS
+change is what needed checking) and screenshotted all three themes — the solid
+accent-fill pill with the star icon is clearly legible and visually distinct from the
+surrounding chrome in light, dark, and retro alike, including retro's amber-on-black
+accent color. `npm run lint`/`npm test` (145 tests)/`npm run format`/`npm run build` all
+pass.
+
 ### UX-12: Long-press a word to examine it — done (2026-07-14)
 
 In `TapWords`, add pointer handlers per word span: on `pointerdown` start a 500ms
