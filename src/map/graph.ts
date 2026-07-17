@@ -25,6 +25,20 @@ export interface RoomNode {
    * the other is evidence of a text-ambiguous merge (see resolveRoomOnArrival).
    */
   blockedDirections?: Direction[];
+  /**
+   * Description-keys (see `descriptionKey`) of the first few lines of this room's
+   * FIRST-arrival text block — the real description plus object-contents lines
+   * ("There is a small mailbox here."). Captured once, alongside `firstDescription`
+   * (2026-07-17). Why: in BRIEF mode (many games' default, Zork included) a REVISIT
+   * prints only the title and the contents lines — `extractArrival` cannot tell such a
+   * contents line from a real description, and matching it against `firstDescription`
+   * alone used to EXCLUDE the room's own node and mint a spurious `#2` duplicate on a
+   * simple round-trip walk. Matching against the whole first-visit block instead makes
+   * the contents line positively identify the room, while a genuinely distinct
+   * same-named twin (whose first visit prints a different real description) still
+   * mismatches everything and splits off as before.
+   */
+  textFingerprints?: string[];
   /** Batch 4 / UX-20: which level this room is on, relative to the game's first room
    *  (floor 0). undefined means "never assigned" — treat as 0 everywhere it's read.
    *  Auto-inferred from up/down moves (see Automapper.applyFloor); sticky once set,
@@ -134,7 +148,17 @@ function createRoom(graph: MapGraph, name: string, suffixIndex: number): RoomNod
 interface ArrivalText {
   announced: boolean;
   description: string | null;
+  /** Description-keys of the first few non-blank lines after the title — the whole
+   *  visible arrival block, not just its first line. Feeds `RoomNode.textFingerprints`
+   *  (see that field's note on brief-mode revisits). */
+  lineKeys: string[];
 }
+
+/** How many lines of the arrival block are fingerprinted; enough for a description
+ *  plus a room's usual object-contents lines without soaking up whole cutscenes. */
+const FINGERPRINT_LINE_LIMIT = 6;
+
+const NO_ARRIVAL: ArrivalText = { announced: false, description: null, lineKeys: [] };
 
 function extractArrival(turnText: string, roomName: string): ArrivalText {
   const lines = turnText.split('\n').map((line) => line.trim());
@@ -142,13 +166,18 @@ function extractArrival(turnText: string, roomName: string): ArrivalText {
   const titleIndex = lines.findIndex(
     (line) => line.length > 0 && nameKey(normalizeRoomName(line)) === key,
   );
-  if (titleIndex === -1) return { announced: false, description: null };
-  for (let i = titleIndex + 1; i < lines.length; i++) {
+  if (titleIndex === -1) return NO_ARRIVAL;
+  const block: string[] = [];
+  for (let i = titleIndex + 1; i < lines.length && block.length < FINGERPRINT_LINE_LIMIT; i++) {
     const line = lines[i];
     if (!line || line === '>') continue;
-    return { announced: true, description: line };
+    block.push(line);
   }
-  return { announced: true, description: null };
+  return {
+    announced: true,
+    description: block[0] ?? null,
+    lineKeys: block.map(descriptionKey),
+  };
 }
 
 /**
@@ -162,10 +191,23 @@ function descriptionKey(description: string): string {
   return (match ? match[0] : description).toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-/** First captured description wins (it names the room's identity); later ones are state. */
-function rememberDescription(room: RoomNode, description: string | null): RoomNode {
-  if (description && !room.firstDescription) room.firstDescription = description;
+/** First captured arrival text wins (it names the room's identity); later ones are
+ *  state. Records both the first-line description and the whole-block fingerprints. */
+function rememberArrival(room: RoomNode, arrival: ArrivalText): RoomNode {
+  if (arrival.description && !room.firstDescription) room.firstDescription = arrival.description;
+  if (arrival.lineKeys.length > 0 && !room.textFingerprints?.length) {
+    room.textFingerprints = [...arrival.lineKeys];
+  }
   return room;
+}
+
+/** True when the arrival's first line identifies `room`: it matches the stored
+ *  first-visit description, OR any line of the stored first-visit block — the latter is
+ *  what recognizes a brief-mode revisit, where games reprint only object-contents
+ *  lines ("There is a small mailbox here."), not the description. */
+function matchesRoomText(room: RoomNode, descKey: string): boolean {
+  if (room.firstDescription && descriptionKey(room.firstDescription) === descKey) return true;
+  return room.textFingerprints?.includes(descKey) ?? false;
 }
 
 /**
@@ -188,6 +230,7 @@ function splitRoomForContradiction(graph: MapGraph, originalId: string): RoomNod
   const existing = findRoomsByName(graph, original.name);
   const clone = createRoom(graph, original.name, existing.length);
   clone.firstDescription = original.firstDescription;
+  if (original.textFingerprints) clone.textFingerprints = [...original.textFingerprints];
   return clone;
 }
 
@@ -274,29 +317,32 @@ function resolveRoomOnArrival(
   rawDir: Direction | string | null,
   compassDir: Direction | null,
   name: string,
-  description: string | null,
+  arrival: ArrivalText,
 ): RoomNode {
   const aliasId = graph.aliases[nameKey(name)];
   if (aliasId && graph.rooms[aliasId]) {
-    return rememberDescription(graph.rooms[aliasId], description);
+    return rememberArrival(graph.rooms[aliasId], arrival);
   }
 
   if (fromId != null && rawDir != null) {
     const forward = liveEdgeAt(graph, fromId, rawDir);
     const forwardRoom = forward ? graph.rooms[forward.to] : undefined;
     if (forwardRoom && nameKey(forwardRoom.name) === nameKey(name)) {
-      return rememberDescription(forwardRoom, description);
+      return rememberArrival(forwardRoom, arrival);
     }
   }
 
   const allByName = findRoomsByName(graph, name);
   let candidates = allByName;
+  const description = arrival.description;
   if (description != null) {
     const key = descriptionKey(description);
-    const matching = candidates.filter(
-      (c) => c.firstDescription && descriptionKey(c.firstDescription) === key,
-    );
-    if (matching.length === 1) return rememberDescription(matching[0], description);
+    // Match against the whole stored first-visit block, not just firstDescription: in
+    // brief mode a revisit prints only object-contents lines, and matching those
+    // against the description alone used to exclude the room's own node (see
+    // RoomNode.textFingerprints).
+    const matching = candidates.filter((c) => matchesRoomText(c, key));
+    if (matching.length === 1) return rememberArrival(matching[0], arrival);
     candidates = matching.length > 0 ? matching : candidates.filter((c) => !c.firstDescription);
   }
 
@@ -315,7 +361,7 @@ function resolveRoomOnArrival(
         (e) => e.from === fromId && e.to === c.id && e.status === 'confirmed' && !e.userDeleted,
       ),
     );
-    if (hubMatch) return rememberDescription(hubMatch, description);
+    if (hubMatch) return rememberArrival(hubMatch, arrival);
 
     let uncontradicted: RoomNode | null = null;
     for (const candidate of candidates) {
@@ -323,17 +369,17 @@ function resolveRoomOnArrival(
         (e) => e.from === candidate.id && e.dir === oppDir && !e.userDeleted,
       );
       if (reverseEdge && reverseEdge.to === fromId) {
-        return rememberDescription(candidate, description);
+        return rememberArrival(candidate, arrival);
       }
       const edgeContradicted = reverseEdge?.status === 'confirmed' && reverseEdge.to !== fromId;
       const blockedContradicted = candidate.blockedDirections?.includes(oppDir) ?? false;
       if (!edgeContradicted && !blockedContradicted && !uncontradicted) uncontradicted = candidate;
     }
-    if (uncontradicted) return rememberDescription(uncontradicted, description);
+    if (uncontradicted) return rememberArrival(uncontradicted, arrival);
   } else if (candidates.length > 0) {
-    return rememberDescription(candidates[0], description);
+    return rememberArrival(candidates[0], arrival);
   }
-  return rememberDescription(createRoom(graph, name, allByName.length), description);
+  return rememberArrival(createRoom(graph, name, allByName.length), arrival);
 }
 
 function liveEdgeAt(graph: MapGraph, from: string, dir: Direction | string): RoomEdge | undefined {
@@ -362,10 +408,14 @@ function upsertEdge(
   }
 }
 
-/** Auto-adds the inferred reverse edge for a newly confirmed traversal (rule 1). */
+/** Auto-adds the inferred reverse edge for a newly confirmed traversal (rule 1).
+ *  Skipped when the destination room's `blockedDirections` already contains `dir` —
+ *  a guess must not override a direct observation that the way is shut (Zork: North of
+ *  House -w-> West of House is real, but West of House's own east is a boarded door). */
 function maybeAddInferredReverse(graph: MapGraph, from: string, to: string, dir: Direction): void {
   if (isTombstoned(graph, from, dir)) return;
   if (liveEdgeAt(graph, from, dir)) return; // already exists (any status)
+  if (graph.rooms[from]?.blockedDirections?.includes(dir)) return;
   graph.edges.push({ from, to, dir, status: 'inferred' });
 }
 
@@ -590,7 +640,7 @@ export class Automapper {
     name: string,
     isUnknown: boolean,
     sameAsCurrent: boolean,
-    description: string | null,
+    arrival: ArrivalText,
   ): void {
     const departed = this.graph.currentRoomId;
     const arriveAt = (roomId: string) => {
@@ -608,7 +658,7 @@ export class Automapper {
     if (this.lastTurnChangedRoom && this.lastDepartedRoomId) {
       const prev = this.graph.rooms[this.lastDepartedRoomId];
       if (prev && nameKey(prev.name) === nameKey(name)) {
-        rememberDescription(prev, description);
+        rememberArrival(prev, arrival);
         arriveAt(prev.id);
         return;
       }
@@ -619,7 +669,7 @@ export class Automapper {
       return;
     }
 
-    const room = resolveRoomOnArrival(this.graph, null, null, null, name, description);
+    const room = resolveRoomOnArrival(this.graph, null, null, null, name, arrival);
     this.applyFloor(null, null, room);
     arriveAt(room.id);
   }
@@ -658,9 +708,7 @@ export class Automapper {
     const isUnknown = normalized.length === 0;
     const currentId = this.graph.currentRoomId;
     const currentRoom = currentId ? this.graph.rooms[currentId] : null;
-    const arrival = isUnknown
-      ? { announced: false, description: null }
-      : extractArrival(turnText, normalized);
+    const arrival = isUnknown ? NO_ARRIVAL : extractArrival(turnText, normalized);
 
     const sameAsCurrent =
       currentRoom != null &&
@@ -674,7 +722,7 @@ export class Automapper {
     // the sameAsCurrent logic below can't see when the two rooms share a name, so undo
     // is handled before it.
     if (pending.kind === 'undo') {
-      this.handleUndo(normalized, isUnknown, sameAsCurrent, arrival.description);
+      this.handleUndo(normalized, isUnknown, sameAsCurrent, arrival);
       return;
     }
 
@@ -700,7 +748,7 @@ export class Automapper {
     }
 
     if (pending.kind === 'move') {
-      this.handleMovement(currentId, pending.dir, normalized, arrival.description);
+      this.handleMovement(currentId, pending.dir, normalized, arrival);
       return;
     }
 
@@ -711,19 +759,12 @@ export class Automapper {
       // it as an unconnected teleport. Only a command with nothing to link *from* (the
       // very first room of the game, or leaving the shared unknown/dark singleton,
       // handled below) has no edge to record.
-      this.handleMovement(currentId, pending.label, normalized, arrival.description);
+      this.handleMovement(currentId, pending.label, normalized, arrival);
       return;
     }
 
     // true teleport bootstrap: no origin at all to hang an edge off of
-    const room = resolveRoomOnArrival(
-      this.graph,
-      null,
-      null,
-      null,
-      normalized,
-      arrival.description,
-    );
+    const room = resolveRoomOnArrival(this.graph, null, null, null, normalized, arrival);
     this.applyFloor(null, null, room);
     if (pending.kind === 'other') room.flags.teleportTarget = true;
     this.lastDepartedRoomId = this.graph.currentRoomId;
@@ -746,12 +787,12 @@ export class Automapper {
     fromId: string | null,
     dir: Direction | string,
     destName: string,
-    description: string | null,
+    arrival: ArrivalText,
   ): void {
     // No origin to hang an edge off of (unknown room, or move before any room is known).
     const from = fromId === UNKNOWN_ROOM_ID ? null : fromId;
     const compassDir = isCompassDirection(dir) ? dir : null;
-    const destRoom = resolveRoomOnArrival(this.graph, from, dir, compassDir, destName, description);
+    const destRoom = resolveRoomOnArrival(this.graph, from, dir, compassDir, destName, arrival);
     this.applyFloor(from, compassDir, destRoom);
 
     // A recorded blockage in this exact direction is now stale — the obstacle was

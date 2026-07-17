@@ -36,6 +36,11 @@ export interface EngineHandle {
   on(listener: (e: GameEvent) => void): () => void; // returns unsubscribe
   saveAutosave(): Promise<Uint8Array>; // opaque snapshot blob
   stop(): Promise<void>;
+  /** True while a line command (real or silent) is in flight or queued — i.e. the VM
+   *  has not returned to an idle line prompt. Optional so test fakes may omit it;
+   *  callers must treat "absent" as "unknown", not as idle. Added for prospective
+   *  mapping, whose probe bursts must not start over a still-working engine. */
+  isBusy?(): boolean;
 
   // --- Added in Task 1.4 (protocol tap fixture recording — not in the original
   // SPECS.md draft, which didn't anticipate needing raw wire access from the UI) ---

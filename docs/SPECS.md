@@ -163,6 +163,43 @@ rather than lines to an undrawn room. See §5's component inventory note and
   moment anything unexpected happens (char prompt, quit, an /undo that doesn't return
   to the origin). Live-tested against Zork 1 in `tests/zork-prospect.test.ts`.
 
+**2026-07-17 follow-up (prospective-mapping interface lockup + brief-mode duplicates):**
+shipping prospective mapping surfaced three deeper defects, all fixed and covered by
+`tests/zork-prospect-store.test.ts` (the REAL engineStore + engine + Zork 1 stack, brief
+mode — the earlier live tests drove prospect.ts directly and in verbose mode, masking
+all three):
+
+- *Engine queue drain deadlock.* `createEngine`'s internal ready-listener drained
+  `queuedCommands` synchronously from inside the event dispatch — which runs during
+  `BridgeGlkOte.update()` BEFORE `super.update()` clears GlkOteBase's
+  `waiting_for_update`, so the drained command was silently dropped by `send_event`'s
+  guard and `busy` stayed true forever: every later command queued behind it, wedging
+  the entire interface (the reported "can't enter values"). The drain now defers each
+  dispatch to a microtask (after the update cycle fully returns), keeping `busy` true so
+  order is preserved. This path was effectively dead code until probing caused commands
+  to queue during the per-turn silent autosave; the fix is engine-level and general.
+- *Probe claim races.* `probeExits` now CLAIMS the engine synchronously inside the same
+  event dispatch that settles a turn (probing/traveling set before anything else can
+  run), defers only its first engine command, and skips entirely when
+  `EngineHandle.isBusy()` (new, optional) reports a command in flight or queued. A
+  player command submitted mid-burst is stashed (`sendCommand` while probing), cancels
+  the burst at the next move+undo pair boundary (an owed /undo ALWAYS runs first), and
+  replays once the burst unwinds — never interleaved between a probe move and its
+  rewind.
+- *Brief-mode revisit duplicates* (pre-existing, probing just guaranteed hitting it):
+  in brief mode a REVISIT prints only the room title plus object-contents lines
+  ("There is a small mailbox here."); `extractArrival` can't tell such a line from a
+  real description, and matching it against `firstDescription` alone EXCLUDED the
+  room's own node — a plain round-trip walk minted `west-of-house#2`. New
+  `RoomNode.textFingerprints` stores description-keys of the whole first-arrival block
+  (up to 6 lines: description + contents); rule 6's step 3 matches the arrival line
+  against any of them, so a contents line positively identifies the room while a
+  genuinely distinct same-named twin (different first-visit description) still
+  mismatches everything and splits off as before. Relatedly, `maybeAddInferredReverse`
+  no longer guesses a reverse edge into a direction recorded in `blockedDirections` —
+  a guess must not override a direct observation (Zork: North of House -w-> West of
+  House is real, but West of House's east is a boarded door).
+
 **2026-07-17 addition (map stability + label legibility):** `computeLayout` is now
 incremental: a room placed once (`RoomNode.posAssigned`, or `posLocked` from a user
 drag) keeps its position on every later run; only never-placed rooms are positioned,
