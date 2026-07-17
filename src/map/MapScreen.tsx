@@ -527,11 +527,7 @@ export function MapScreen() {
                 <rect x={-ROOM_W / 2} y={-ROOM_H / 2} width={ROOM_W} height={ROOM_H} rx={8} />
                 <text x={0} y={0} textAnchor="middle" dominantBaseline="middle">
                   {wrapRoomName(room.name).map((line, i, lines) => (
-                    <tspan
-                      key={i}
-                      x={0}
-                      y={(i - (lines.length - 1) / 2) * LABEL_LINE_HEIGHT}
-                    >
+                    <tspan key={i} x={0} y={(i - (lines.length - 1) / 2) * LABEL_LINE_HEIGHT}>
                       {line}
                     </tspan>
                   ))}

@@ -95,7 +95,11 @@ function layoutFloor(graph: MapGraph, floorRooms: RoomNode[]): void {
   }
 }
 
-function place(room: RoomNode, pos: { x: number; y: number }, occupied: { x: number; y: number }[]) {
+function place(
+  room: RoomNode,
+  pos: { x: number; y: number },
+  occupied: { x: number; y: number }[],
+) {
   room.pos = pos;
   room.posAssigned = true;
   occupied.push(pos);

@@ -103,27 +103,21 @@ describe('layout stability (2026-07-17 rework)', () => {
   it('is anchored independently of the current room: moving the player never reshuffles', () => {
     const graph = chainGraph(['a', 'b', 'c']);
     computeLayout(graph);
-    const before = Object.fromEntries(
-      Object.values(graph.rooms).map((r) => [r.id, { ...r.pos }]),
-    );
+    const before = Object.fromEntries(Object.values(graph.rooms).map((r) => [r.id, { ...r.pos }]));
 
     // Re-entering the floor "from the other side" used to re-anchor the BFS at the
     // current room and re-derive every position from there.
     graph.currentRoomId = 'c';
     computeLayout(graph);
     for (const room of Object.values(graph.rooms)) {
-      expect(room.pos, `room ${room.id} moved when only the player moved`).toEqual(
-        before[room.id],
-      );
+      expect(room.pos, `room ${room.id} moved when only the player moved`).toEqual(before[room.id]);
     }
   });
 
   it('adding a new room never moves already-placed rooms', () => {
     const graph = chainGraph(['a', 'b', 'c']);
     computeLayout(graph);
-    const before = Object.fromEntries(
-      Object.values(graph.rooms).map((r) => [r.id, { ...r.pos }]),
-    );
+    const before = Object.fromEntries(Object.values(graph.rooms).map((r) => [r.id, { ...r.pos }]));
 
     graph.rooms['d'] = mkRoom('d');
     graph.edges.push(
