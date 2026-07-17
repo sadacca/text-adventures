@@ -137,6 +137,7 @@ export const useMapStore = create<MapState>((set) => ({
   setRoomFloor(id, floor) {
     if (!automapper) return;
     setRoomFloor(automapper.graph, id, floor);
+    computeLayout(automapper.graph); // re-place the room on its new floor (posAssigned was cleared)
     commit(set);
   },
 

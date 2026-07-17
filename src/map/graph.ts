@@ -33,6 +33,17 @@ export interface RoomNode {
   /** True once a user edits floor directly (RoomEditSheet, UX-21) — the automapper must
    *  never overwrite a floorLocked room's floor afterward. */
   floorLocked?: boolean;
+  /**
+   * True once `computeLayout` has placed this room (2026-07-17, map stability). A placed
+   * room keeps its position on every later layout run — new rooms are placed AROUND the
+   * existing map instead of the whole floor being re-derived from scratch anchored at
+   * wherever the player currently stands (which used to reshuffle a floor's entire
+   * layout every time it was re-entered from a different room). Cleared by
+   * `setRoomFloor` so a user-refloored room gets a fresh spot on its new floor.
+   * Weaker than `posLocked`: layout set this itself, so layout may in principle clear
+   * it, whereas posLocked (a user drag) is forever.
+   */
+  posAssigned?: boolean;
 }
 
 export interface RoomEdge {
@@ -447,6 +458,7 @@ export function moveRoom(graph: MapGraph, id: string, pos: { x: number; y: numbe
 export function setRoomFloor(graph: MapGraph, id: string, floor: number): void {
   const room = graph.rooms[id];
   if (!room) return;
+  if (room.floor !== floor && !room.posLocked) room.posAssigned = false;
   room.floor = floor;
   room.floorLocked = true;
 }
@@ -504,13 +516,20 @@ export class Automapper {
   }
 
   /**
-   * Batch 4 / UX-20: auto-infers `destRoom.floor` from the move that reached it. Never
-   * overwrites an already-assigned floor (whether set by an earlier inference or a user
-   * edit via `setRoomFloor`) — two staircases between the same two floors might disagree
-   * with a naive relative computation, and sticky-once-set is the same "never destroy
-   * established data" policy used elsewhere in this file. Only `up`/`down` imply a level
-   * change (deliberate scope decision — `in`/`out` don't, per IF convention: Zork's own
-   * house stays on one floor whether you're in or out of it).
+   * Batch 4 / UX-20 (revised 2026-07-17): auto-infers `destRoom.floor` from the move
+   * that reached it. EVERY move propagates a floor to a not-yet-assigned destination:
+   * `up`/`down` add +1/-1 to the origin's floor, and everything else (horizontal
+   * compass moves, `in`/`out`, rule-4 custom edges) carries the origin's floor over
+   * unchanged — the absence of up/down means "same level", per IF convention (Zork's
+   * house interior stays on the ground floor; its cellar rooms all stay at -1 as you
+   * walk between them). The original design only assigned floors on up/down, which
+   * left every horizontally-reached room `undefined` (= rendered on floor 0): walking
+   * east in the cellar dumped rooms back onto the ground-floor map, and a later "up"
+   * from one of those mis-floored rooms computed from 0 instead of the real level.
+   * Never overwrites an already-assigned floor (whether set by an earlier inference or
+   * a user edit via `setRoomFloor`) — two staircases between the same two floors might
+   * disagree with a naive relative computation, and sticky-once-set is the same "never
+   * destroy established data" policy used elsewhere in this file.
    */
   private applyFloor(
     fromId: string | null,
@@ -522,9 +541,9 @@ export class Automapper {
       destRoom.floor = 0; // first room of the game, or a teleport with no origin
       return;
     }
-    if (compassDir !== 'up' && compassDir !== 'down') return;
     const fromFloor = this.graph.rooms[fromId]?.floor ?? 0;
-    destRoom.floor = fromFloor + (compassDir === 'up' ? 1 : -1);
+    const delta = compassDir === 'up' ? 1 : compassDir === 'down' ? -1 : 0;
+    destRoom.floor = fromFloor + delta;
   }
 
   /**

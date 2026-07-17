@@ -826,16 +826,44 @@ describe('Batch 4: room floors', () => {
     expect(am2.graph.rooms['cellar'].floor).toBe(-1);
   });
 
-  it('does not assign or change floor on in/out moves', () => {
+  it('carries the origin floor over unchanged on in/out moves', () => {
     const am = new Automapper();
     am.handleEvent(status('Behind House', 0));
     am.handleEvent(cmd('in', 1));
     am.handleEvent(status('Kitchen', 1));
-    expect(am.graph.rooms['kitchen'].floor).toBeUndefined();
+    expect(am.graph.rooms['kitchen'].floor).toBe(0); // in/out = same level, per IF convention
 
     am.handleEvent(cmd('out', 2));
     am.handleEvent(status('Behind House', 2));
-    expect(am.graph.rooms['behind-house'].floor).toBe(0); // first room only, from bootstrap
+    expect(am.graph.rooms['behind-house'].floor).toBe(0);
+  });
+
+  it('keeps horizontal moves on the origin floor, above and below ground', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Living Room', 0));
+    am.handleEvent(cmd('down', 1));
+    am.handleEvent(status('Cellar', 1));
+    // Walking around the cellar must stay at -1 — this is the "rooms fall back onto the
+    // ground-floor map" bug: horizontally-reached rooms used to stay floor-undefined.
+    am.handleEvent(cmd('e', 2));
+    am.handleEvent(status('Troll Room', 2));
+    expect(am.graph.rooms['troll-room'].floor).toBe(-1);
+
+    // ...and a later "up" computes from the REAL floor (-1), not a defaulted 0.
+    am.handleEvent(cmd('up', 3));
+    am.handleEvent(status('Ledge', 3));
+    expect(am.graph.rooms['ledge'].floor).toBe(0);
+  });
+
+  it('carries the origin floor across rule-4 custom edges', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Attic Landing', 0));
+    am.handleEvent(cmd('up', 1));
+    am.handleEvent(status('Attic', 1));
+    am.handleEvent(cmd('climb through hatch', 2));
+    am.handleEvent(bufferText('Crawlspace\nA cramped space under the eaves.', 2));
+    am.handleEvent(status('Crawlspace', 2));
+    expect(am.graph.rooms['crawlspace'].floor).toBe(1);
   });
 
   it('never overwrites an already floor-assigned room, even on a conflicting up/down arrival', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEmptyGraph, type MapGraph, type RoomNode } from '../src/map/graph';
+import { createEmptyGraph, setRoomFloor, type MapGraph, type RoomNode } from '../src/map/graph';
 import { computeLayout } from '../src/map/layout';
 
 function mkRoom(id: string, pos = { x: 0, y: 0 }): RoomNode {
@@ -86,7 +86,7 @@ describe('Batch 4 / UX-21: floor-scoped layout', () => {
     graph.currentRoomId = 'landing';
     computeLayout(graph);
 
-    // Floor 0 is laid out from the current room, same as the single-floor algorithm.
+    // Floor 0 is laid out from its first-discovered room.
     expect(graph.rooms['landing'].pos).toEqual({ x: 0, y: 0 });
     expect(graph.rooms['hall'].pos).toEqual({ x: 0, y: -1 });
 
@@ -96,5 +96,87 @@ describe('Batch 4 / UX-21: floor-scoped layout', () => {
     // floor-0 coordinates (only one floor renders at a time).
     expect(graph.rooms['loft'].pos).toEqual({ x: 0, y: 0 });
     expect(graph.rooms['attic'].pos).toEqual({ x: 0, y: -1 });
+  });
+});
+
+describe('layout stability (2026-07-17 rework)', () => {
+  it('is anchored independently of the current room: moving the player never reshuffles', () => {
+    const graph = chainGraph(['a', 'b', 'c']);
+    computeLayout(graph);
+    const before = Object.fromEntries(
+      Object.values(graph.rooms).map((r) => [r.id, { ...r.pos }]),
+    );
+
+    // Re-entering the floor "from the other side" used to re-anchor the BFS at the
+    // current room and re-derive every position from there.
+    graph.currentRoomId = 'c';
+    computeLayout(graph);
+    for (const room of Object.values(graph.rooms)) {
+      expect(room.pos, `room ${room.id} moved when only the player moved`).toEqual(
+        before[room.id],
+      );
+    }
+  });
+
+  it('adding a new room never moves already-placed rooms', () => {
+    const graph = chainGraph(['a', 'b', 'c']);
+    computeLayout(graph);
+    const before = Object.fromEntries(
+      Object.values(graph.rooms).map((r) => [r.id, { ...r.pos }]),
+    );
+
+    graph.rooms['d'] = mkRoom('d');
+    graph.edges.push(
+      { from: 'c', to: 'd', dir: 'e', status: 'confirmed' },
+      { from: 'd', to: 'c', dir: 'w', status: 'inferred' },
+    );
+    graph.currentRoomId = 'd';
+    computeLayout(graph);
+
+    for (const id of ['a', 'b', 'c']) {
+      expect(graph.rooms[id].pos, `existing room ${id} moved`).toEqual(before[id]);
+    }
+    expect(graph.rooms['d'].pos).toEqual({ x: 1, y: -2 }); // east of c
+  });
+
+  it('never lets a fractional-offset room overlap an integer-cell room box', () => {
+    // Room boxes are ~0.84x0.44 cells. A same-floor `up` edge places its target at a
+    // fractional offset (0.5, -1.35) — the old exact-cell-key collision check thought
+    // that cell was distinct from the integer cell (1, -1), letting two boxes (and
+    // their labels) sit 0.5 x 0.35 cells apart, visibly overlapping.
+    const graph = createEmptyGraph();
+    graph.rooms['a'] = mkRoom('a');
+    graph.rooms['b'] = mkRoom('b');
+    graph.rooms['c'] = mkRoom('c');
+    graph.edges.push(
+      { from: 'a', to: 'b', dir: 'up', status: 'confirmed' }, // b -> (0.5, -1.35)
+      { from: 'a', to: 'c', dir: 'ne', status: 'confirmed' }, // c wants (1, -1): overlaps b
+    );
+    graph.currentRoomId = 'a';
+    computeLayout(graph);
+
+    const rooms = Object.values(graph.rooms);
+    for (let i = 0; i < rooms.length; i++) {
+      for (let j = i + 1; j < rooms.length; j++) {
+        const dx = Math.abs(rooms[i].pos.x - rooms[j].pos.x);
+        const dy = Math.abs(rooms[i].pos.y - rooms[j].pos.y);
+        expect(
+          dx >= 0.9 || dy >= 0.6,
+          `rooms ${rooms[i].id} and ${rooms[j].id} overlap at dx=${dx}, dy=${dy}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('setRoomFloor clears posAssigned so the room is re-placed on its new floor', () => {
+    const graph = chainGraph(['a', 'b']);
+    computeLayout(graph);
+    expect(graph.rooms['b'].posAssigned).toBe(true);
+
+    setRoomFloor(graph, 'b', 1);
+    expect(graph.rooms['b'].posAssigned).toBe(false);
+    computeLayout(graph);
+    expect(graph.rooms['b'].posAssigned).toBe(true);
+    expect(graph.rooms['b'].floor).toBe(1);
   });
 });
