@@ -8,6 +8,7 @@ import { VerbChips } from './VerbChips';
 import { TapWords } from './TapWords';
 import { ScoreLogSheet } from './ScoreLogSheet';
 import { GoToSheet } from './GoToSheet';
+import { RecallSheet } from './RecallSheet';
 import { DebugConsole } from '../debug/DebugConsole';
 import { haptic } from '../haptics';
 
@@ -36,6 +37,8 @@ export function StoryScreen() {
   const dismissTapHint = useUiStore((s) => s.dismissTapHint);
   const goToSheetOpen = useUiStore((s) => s.goToSheetOpen);
   const setGoToSheetOpen = useUiStore((s) => s.setGoToSheetOpen);
+  const recallSheetOpen = useUiStore((s) => s.recallSheetOpen);
+  const setRecallSheetOpen = useUiStore((s) => s.setRecallSheetOpen);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
@@ -171,6 +174,17 @@ export function StoryScreen() {
           >
             ⚑
           </button>
+          <button
+            type="button"
+            className="status-line-recall tap-target"
+            aria-label="Search this story"
+            onClick={() => {
+              haptic();
+              setRecallSheetOpen(true);
+            }}
+          >
+            🔍
+          </button>
         </div>
       )}
       {scoreDelta && (
@@ -247,6 +261,7 @@ export function StoryScreen() {
       {debugConsoleEnabled && <DebugConsole />}
       {scoreLogOpen && <ScoreLogSheet gameId={gameId} onClose={() => setScoreLogOpen(false)} />}
       {goToSheetOpen && <GoToSheet onClose={() => setGoToSheetOpen(false)} />}
+      {recallSheetOpen && <RecallSheet gameId={gameId} onClose={() => setRecallSheetOpen(false)} />}
     </div>
   );
 }

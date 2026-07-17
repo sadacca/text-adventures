@@ -27,6 +27,12 @@ function onPopState() {
     return;
   }
 
+  if (useUiStore.getState().recallSheetOpen) {
+    useUiStore.getState().setRecallSheetOpen(false);
+    rearm();
+    return;
+  }
+
   const { tab, setTab } = useUiStore.getState();
   const gameLoaded = useEngineStore.getState().gameId !== null;
   if (tab !== 'story' && gameLoaded) {

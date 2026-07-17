@@ -158,6 +158,13 @@
   line-height: 1;
 }
 
+/* UX-33: search chip, same sizing/class family as undo and checkpoint — the third and
+ * (per this task's own note) last icon button the status line's right edge holds. */
+.status-line-recall {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
 /* UX-11 (revisit): a discreet score-increase callout — right-aligned under the status
  * line's score/moves text, so it reads as an annotation of the score rather than a
  * notification. Replaces an earlier floating accent-pill/star version that user testing
@@ -1046,6 +1053,54 @@
   font-size: 12px;
   color: var(--text-dim);
   flex-shrink: 0;
+}
+
+/* UX-33: transcript recall sheet — reuses .room-edit-backdrop/.room-edit-sheet chrome. */
+.recall-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.recall-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.recall-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.recall-entry {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+.recall-turn {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.recall-line {
+  font-size: 14px;
+}
+
+.recall-context {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
 }
 
 .dialog-options {

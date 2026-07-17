@@ -32,6 +32,9 @@ export interface UiState {
   /** UX-31: whether the Story tab's "Go to…" travel sheet is open. Session-only, not
    *  persisted — same reasoning as roomEditTarget (Android back-button trap support). */
   goToSheetOpen: boolean;
+  /** UX-33: whether the Story tab's transcript recall/search sheet is open. Same
+   *  session-only, back-button-trap reasoning as goToSheetOpen. */
+  recallSheetOpen: boolean;
   setTab: (tab: Tab) => void;
   setCommandDraft: (draft: string) => void;
   appendToDraft: (word: string) => void;
@@ -45,6 +48,7 @@ export interface UiState {
   dismissTapHint: () => void;
   setActiveFloor: (floor: number | null) => void;
   setGoToSheetOpen: (open: boolean) => void;
+  setRecallSheetOpen: (open: boolean) => void;
 }
 
 /**
@@ -84,6 +88,7 @@ export const useUiStore = create<UiState>()(
       roomEditTarget: null,
       activeFloor: null,
       goToSheetOpen: false,
+      recallSheetOpen: false,
       setTab: (tab) => set({ tab }),
       setCommandDraft: (commandDraft) => set({ commandDraft }),
       appendToDraft: (word) =>
@@ -104,6 +109,7 @@ export const useUiStore = create<UiState>()(
       dismissTapHint: () => set({ hasSeenTapHint: true }),
       setActiveFloor: (activeFloor) => set({ activeFloor }),
       setGoToSheetOpen: (goToSheetOpen) => set({ goToSheetOpen }),
+      setRecallSheetOpen: (recallSheetOpen) => set({ recallSheetOpen }),
     }),
     persistOptions,
   ),

@@ -650,6 +650,25 @@ the two-char minimum.
 — every mention appears with turn stamps; keyboard opens only inside this sheet; Android
 back closes it. All three themes.
 
+**Outcome (2026-07-17): done as specced.** New pure `src/story/recall.ts`
+(`filterTranscript`) matches case-insensitively across `command` and each line of
+`response` independently, newest-turn-first, capped at 50 total results, returning
+`[start, end)` offsets so `RecallSheet` bolds a match with a plain `<strong>` element —
+never `dangerouslySetInnerHTML`. `RecallSheet` debounces 200ms, requires 2+ characters
+(enforced inside `filterTranscript` itself), and is the one sheet in this app allowed to
+autofocus/open the keyboard. `uiStore` gained `recallSheetOpen`, wired into
+`backButton.ts` alongside `goToSheetOpen`. A third status-line icon button (🔍) joins
+↶/⚑ — the row's stated three-icon cap. `npm run lint`/`npm test` (213 tests, up from
+204)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): after 10 turns,
+opened the sheet (input auto-focused, confirmed via `document.activeElement`), searched
+"mailbox" — every mention surfaced with its turn number, the matched word bolded, and
+one line of context (e.g. `Turn 0` / "There is a small **mailbox** here." / "You are
+standing in an open field…"). Simulated Android back via `page.goBack()`: closed the
+sheet without leaving the Story tab. Screenshotted in light, dark, and retro — legible
+in all three.
+
 ### UX-34: Library cards that tell a story [visual check]
 
 Cards show `Z3 · last played Jul 12`. The interesting numbers already exist: score is
