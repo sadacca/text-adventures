@@ -691,6 +691,18 @@ stats line.
 **Acceptance:** lint/tests/build pass. Live: the Zork I card shows real numbers after
 play; a freshly-uploaded game shows none. All three themes.
 
+**Outcome (2026-07-17): done as specced.** `refreshSavedGameIds` extended (not
+duplicated) to also fetch each game's map and derive `{ turns, rooms }` from the same
+`getLatestAutosave` call it already made; `gameStats` is a plain `Map<gameId, stats>` in
+component state, rendered as a second `.game-list-meta` line only when present (no "0
+rooms" noise for a never-played game). `npm run lint`/`npm test` (215 tests, up from
+213)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3` plus a synthetic
+never-played upload): after exploring a few rooms, the Library card showed `3 rooms
+explored · 2 turns`; the freshly-uploaded game's card showed only the format/date line,
+no stats. Screenshotted in light, dark, and retro — legible in all three.
+
 ### UX-35: Reading mode — reclaim vertical space while scrolled back [visual check]
 
 The story screen stacks status line, (recap), exits row, transcript, compass FAB, verb
