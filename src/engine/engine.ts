@@ -66,12 +66,18 @@ export function createEngine(): EngineHandle {
   // silent or not, and drains anything queued while the VM was busy.
   listeners.add((event) => {
     if (event.kind === 'input_requested' && event.type === 'line') {
-      busy = false;
       const next = queuedCommands.shift();
       if (next !== undefined) {
-        dispatch(next, false);
+        // Keep `busy` true (later sendCommand calls must queue behind this one) and
+        // DEFER the dispatch: this listener fires from inside ProtocolTap's event
+        // emission, which BridgeGlkOte.update() runs BEFORE super.update() has cleared
+        // GlkOteBase's `waiting_for_update` — a synchronous dispatch here hits
+        // send_event's guard and is silently dropped, wedging the queue (and the whole
+        // interface) forever. A microtask runs after update() fully returns.
+        queueMicrotask(() => dispatch(next, false));
         return;
       }
+      busy = false;
       const waiter = readyWaiters.shift();
       waiter?.();
     }
@@ -131,6 +137,10 @@ export function createEngine(): EngineHandle {
         return;
       }
       dispatch(text, false);
+    },
+
+    isBusy() {
+      return busy || queuedCommands.length > 0;
     },
 
     sendChar(value) {

@@ -873,6 +873,83 @@ describe('undo turns (undo / Bocfel "/undo")', () => {
   });
 });
 
+describe('brief-mode revisits (textFingerprints)', () => {
+  it('recognizes a revisit that reprints only object-contents lines, not the description', () => {
+    const am = new Automapper();
+    // First visit: full description plus contents line (printed even in brief mode).
+    am.handleEvent(
+      bufferText(
+        'West of House\nYou are standing in an open field west of a white house.\nThere is a small mailbox here.',
+        0,
+      ),
+    );
+    am.handleEvent(status('West of House', 0));
+    am.handleEvent(cmd('n', 1));
+    am.handleEvent(bufferText('North of House\nYou are facing the north side of a house.', 1));
+    am.handleEvent(status('North of House', 1));
+
+    // Brief-mode revisit via a NEW direction: only the title and the contents line
+    // print. Matching that line against firstDescription alone used to exclude the
+    // real room and mint west-of-house#2.
+    am.handleEvent(cmd('w', 2));
+    am.handleEvent(bufferText('West of House\nThere is a small mailbox here.', 2));
+    am.handleEvent(status('West of House', 2));
+
+    expect(am.graph.currentRoomId).toBe('west-of-house');
+    expect(Object.keys(am.graph.rooms).sort()).toEqual(['north-of-house', 'west-of-house']);
+    expect(am.graph.edges).toContainEqual({
+      from: 'north-of-house',
+      to: 'west-of-house',
+      dir: 'w',
+      status: 'confirmed',
+    });
+  });
+
+  it('still splits a genuinely distinct same-named room whose first visit reads differently', () => {
+    const am = new Automapper();
+    am.handleEvent(bufferText('Forest\nThis is a forest, with trees in all directions.', 0));
+    am.handleEvent(status('Forest', 0));
+    am.handleEvent(cmd('e', 1));
+    am.handleEvent(bufferText('Forest\nThis is a dimly lit forest, with large trees.', 1));
+    am.handleEvent(status('Forest', 1));
+    expect(am.graph.currentRoomId).toBe('forest#2');
+  });
+});
+
+describe('inferred reverses respect observed blockages', () => {
+  it('does not guess a reverse edge into a direction recorded as blocked', () => {
+    const am = new Automapper();
+    am.handleEvent(
+      bufferText('West of House\nYou are standing in an open field.\nThere is a mailbox here.', 0),
+    );
+    am.handleEvent(status('West of House', 0));
+    am.handleEvent(cmd('e', 1));
+    am.handleEvent(status('West of House', 1)); // boarded door: blocked, recorded
+    expect(am.graph.rooms['west-of-house'].blockedDirections).toEqual(['e']);
+
+    am.handleEvent(cmd('n', 2));
+    am.handleEvent(bufferText('North of House\nYou are facing the north side.', 2));
+    am.handleEvent(status('North of House', 2));
+    // Walking w back arrives at West of House (contents-line fingerprint match)...
+    am.handleEvent(cmd('w', 3));
+    am.handleEvent(bufferText('West of House\nThere is a mailbox here.', 3));
+    am.handleEvent(status('West of House', 3));
+
+    expect(am.graph.currentRoomId).toBe('west-of-house');
+    expect(am.graph.edges).toContainEqual({
+      from: 'north-of-house',
+      to: 'west-of-house',
+      dir: 'w',
+      status: 'confirmed',
+    });
+    // ...but no inferred e-edge appears: the boarded door was OBSERVED blocked, and a
+    // guess must not override that observation.
+    expect(
+      am.graph.edges.some((e) => e.from === 'west-of-house' && e.dir === 'e'),
+    ).toBe(false);
+  });
+});
+
 describe('rule 2 refinement: a later successful move clears a stale blockage', () => {
   it('drops the direction from blockedDirections once traversal succeeds (door opened)', () => {
     const am = new Automapper();

@@ -221,6 +221,12 @@ let countedVerbsSinceRefresh = 0;
  *  engine event handler without a store round-trip. While true, events still feed the
  *  automapper (that's the whole point) but never the transcript/autosave/score paths. */
 let probeActive = false;
+/** Commands the player typed while a probe burst was running. Sending them straight to
+ *  the engine would interleave them between a probe move and its /undo — they'd execute
+ *  in a room the player isn't really in, then get rewound. Instead they cancel the
+ *  burst (probeCancelRequested) and replay, in order, once it has fully unwound. */
+let stashedDuringProbe: string[] = [];
+let probeCancelRequested = false;
 
 function teardownActiveSession() {
   activeCleanup?.();
@@ -232,6 +238,8 @@ function teardownActiveSession() {
   previousScore = null;
   countedVerbsSinceRefresh = 0;
   probeActive = false;
+  stashedDuringProbe = [];
+  probeCancelRequested = false;
 }
 
 export const useEngineStore = create<EngineState>((set, get) => ({
@@ -456,16 +464,23 @@ export const useEngineStore = create<EngineState>((set, get) => ({
                 .then((bytes) => writeAutosaveGeneration(gameId, bytes, event.turn))
                 .catch((err: unknown) => console.error('autosave failed', err));
             }
-            // Prospective mapping: the player's turn has fully settled — quietly scout
-            // the current room's unexplored directions. queueMicrotask escapes the
-            // event dispatch we're inside of; probeExits itself no-ops when there's
-            // nothing left to learn here, so this is free on revisits.
-            if (useUiStore.getState().prospectiveMapping && !get().traveling) {
-              queueMicrotask(() => void get().probeExits());
-            }
           }
         }
         set({ inputType: event.type });
+        // Prospective mapping: the player's turn has fully settled — quietly scout the
+        // current room's unexplored directions. Called synchronously (probeExits CLAIMS
+        // the engine — probing/traveling — before this dispatch ends) so no player
+        // command can slip in between the turn settling and the burst starting; the
+        // burst's first actual engine command is deferred internally. No-ops when the
+        // room is already fully scouted, so this is free on revisits.
+        if (
+          !resuming &&
+          event.type === 'line' &&
+          useUiStore.getState().prospectiveMapping &&
+          !get().traveling
+        ) {
+          void get().probeExits();
+        }
       } else if (event.kind === 'quit') {
         set({ inputType: null });
       }
@@ -581,6 +596,14 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   },
 
   sendCommand(text) {
+    if (probeActive) {
+      // Mid-probe-burst: don't hand this to the engine yet (it would run between a
+      // probe move and its /undo). Cancel the burst and replay once it unwinds.
+      stashedDuringProbe.push(text);
+      probeCancelRequested = true;
+      set((s) => ({ pinRequestId: s.pinRequestId + 1, recapEntries: null }));
+      return;
+    }
     activeEngine?.sendCommand(text);
     set((s) => ({ pinRequestId: s.pinRequestId + 1, recapEntries: null }));
   },
@@ -642,20 +665,39 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     const engine = activeEngine;
     if (!engine || probeActive) return;
     if (get().traveling || get().inputType !== 'line' || !get().gameId) return;
+    // A command already in flight or queued (fast typist, engine mid-drain) means the
+    // world is about to change — probing now would scout a stale origin and swallow
+    // that command's turn. Skip; the trigger fires again when that turn settles.
+    if (engine.isBusy?.()) return;
     // Probe commands churn mapStore's lastMoveDir (UX-26) as they flow through the
     // automapper; snapshot the player's own last move and restore it after.
     const savedLastMoveDir = useMapStore.getState().lastMoveDir;
+    // Everything above and including this claim is SYNCHRONOUS from the caller's
+    // perspective — when triggered from the settled turn's own event dispatch, the
+    // engine is reserved before any other code (or keystroke) can act on that turn.
     probeActive = true;
+    probeCancelRequested = false;
     set({ probing: true, traveling: true });
     try {
+      // Escape the event-dispatch stack before the first engine command: a dispatch
+      // issued from inside a GlkOte update cycle is dropped by its waiting_for_update
+      // guard. A microtask runs only once the current stack has fully unwound.
+      await Promise.resolve();
       await probeUnexploredDirections(
         { sendCommand: (text) => engine.sendCommand(text), on: (l) => engine.on(l) },
         () => useMapStore.getState().graph,
+        () => !probeCancelRequested,
       );
     } finally {
       probeActive = false;
+      probeCancelRequested = false;
       set({ probing: false, traveling: false });
       useMapStore.setState({ lastMoveDir: savedLastMoveDir });
+      // Replay anything the player typed during the burst, now that the world is back
+      // in the room they thought they were in. Engine-level queueing keeps the order.
+      const stashed = stashedDuringProbe;
+      stashedDuringProbe = [];
+      for (const text of stashed) engine.sendCommand(text);
     }
   },
 
@@ -690,9 +732,10 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     } finally {
       set({ traveling: false });
       // Travel steps suppress the per-turn probe trigger (traveling gate), so scout
-      // the destination once the trip is over.
+      // the destination once the trip is over. probeExits claims synchronously and
+      // defers its own first engine command, so no extra deferral here.
       if (useUiStore.getState().prospectiveMapping) {
-        queueMicrotask(() => void get().probeExits());
+        void get().probeExits();
       }
     }
   },

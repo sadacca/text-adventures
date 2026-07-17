@@ -68,10 +68,16 @@ export function unexploredDirections(graph: MapGraph, roomId: string): Direction
  * prompt (can't be answered blindly), a quit, or an /undo that does not return to the
  * origin room. The caller is responsible for gating UI input for the duration and for
  * keeping probe turns out of the transcript/autosave stream.
+ *
+ * `shouldContinue` is polled between complete move+undo pairs — the player typing a
+ * command mid-burst cancels further probing so their command runs promptly, but an
+ * already-sent probe move ALWAYS gets its /undo first (the world must never be left
+ * one probe-step away from where the player thinks they are).
  */
 export async function probeUnexploredDirections(
   engine: ProspectEngine,
   getGraph: () => MapGraph,
+  shouldContinue: () => boolean = () => true,
 ): Promise<ProspectResult> {
   const originId = getGraph().currentRoomId;
   if (!originId || originId === UNKNOWN_ROOM_ID) return 'skipped';
@@ -79,6 +85,7 @@ export async function probeUnexploredDirections(
   if (dirs.length === 0) return 'skipped';
 
   for (const dir of dirs) {
+    if (!shouldContinue()) return 'aborted';
     if ((await runTurn(engine, dir)) !== 'line') return 'aborted';
     if (getGraph().currentRoomId !== originId) {
       if ((await runTurn(engine, UNDO_COMMAND)) !== 'line') return 'aborted';
