@@ -23,6 +23,7 @@ import type { TranscriptEntry } from '../storage/db.js';
 import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
 import { useMapStore } from './mapStore.js';
 import { useDialogStore } from './dialogStore.js';
+import { detectUnknownWord } from '../story/oops.js';
 
 /** DebugConsole's live event feed (Task 1.4): capped so a long session can't leak memory. */
 const DEBUG_EVENT_LIMIT = 300;
@@ -119,6 +120,11 @@ interface EngineState {
   recapEntries: { command: string; response: string }[] | null;
   dismissRecap: () => void;
 
+  /** UX-27: the word a parser error said it didn't understand (quoted, narrowly
+   *  detected — see story/oops.ts), so CommandBar/TapWords can offer an `oops <word>`
+   *  fix-up. Cleared by any subsequent command. Session-only. */
+  oopsWord: string | null;
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -179,6 +185,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   dismissRecap() {
     set({ recapEntries: null });
   },
+  oopsWord: null,
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -206,6 +213,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       scoreDelta: null,
       vocabulary: null,
       recapEntries: null,
+      oopsWord: null,
     });
 
     const game = await getGame(gameId);
@@ -266,6 +274,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       if (event.kind === 'command') {
         pendingCommand = event.text;
         pendingResponseChunks = [];
+        set({ oopsWord: null });
         return;
       }
 
@@ -307,6 +316,9 @@ export const useEngineStore = create<EngineState>((set, get) => ({
             });
             pendingCommand = null;
             pendingResponseChunks = [];
+            // UX-27: a char prompt can't accept an `oops` line, so only line requests
+            // are worth detecting against.
+            if (event.type === 'line') set({ oopsWord: detectUnknownWord(response) });
           }
           if (event.type === 'line') {
             lastKnownTurn = event.turn;
@@ -425,6 +437,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       scoreDelta: null,
       vocabulary: null,
       recapEntries: null,
+      oopsWord: null,
     });
   },
 

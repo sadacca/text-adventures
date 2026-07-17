@@ -265,6 +265,21 @@ describe('TapWords', () => {
     render(<TapWords text="A brass lamp sits here." />);
     expect(screen.getByText('lamp')).not.toHaveClass('tap-word-vocab');
   });
+
+  it('UX-27: composes "oops <word>" when oopsWord is set and the draft is empty', () => {
+    useEngineStore.setState({ oopsWord: 'sinbad' });
+    render(<TapWords text="There is a sword here." />);
+    fireEvent.click(screen.getByText('sword'));
+    expect(useUiStore.getState().commandDraft).toBe('oops sword');
+    expect(useEngineStore.getState().oopsWord).toBeNull();
+  });
+
+  it('UX-27: taps normally when oopsWord is null', () => {
+    useEngineStore.setState({ oopsWord: null });
+    render(<TapWords text="There is a sword here." />);
+    fireEvent.click(screen.getByText('sword'));
+    expect(useUiStore.getState().commandDraft).toBe('sword');
+  });
 });
 
 describe('CommandBar', () => {
@@ -361,6 +376,20 @@ describe('CommandBar', () => {
     fireEvent.change(keyInput, { target: { value: 'n' } });
     expect(sendChar).toHaveBeenCalledWith('n');
     expect(keyInput).toHaveValue('');
+  });
+
+  it('UX-27: shows the oops hint when oopsWord is set and the draft is empty', () => {
+    useEngineStore.setState({ inputType: 'line', oopsWord: 'sinbad' });
+    useUiStore.setState({ commandDraft: '' });
+    render(<CommandBar />);
+    expect(screen.getByText("Didn't know “sinbad” — tap the word you meant")).toBeInTheDocument();
+  });
+
+  it('UX-27: hides the oops hint once the draft has text', () => {
+    useEngineStore.setState({ inputType: 'line', oopsWord: 'sinbad' });
+    useUiStore.setState({ commandDraft: 'oops ' });
+    render(<CommandBar />);
+    expect(screen.queryByText(/Didn.t know/)).not.toBeInTheDocument();
   });
 });
 

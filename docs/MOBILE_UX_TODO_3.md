@@ -294,6 +294,23 @@ tapping the intended word in the visible text composes `oops <word>`, Send re-pa
 the corrected command. Confirm ordinary play (no parser error) shows no hint and taps
 compose normally.
 
+**Outcome (2026-07-17): done as specced.** `detectUnknownWord` added in
+`src/story/oops.ts` against the three quoted patterns (Infocom's `don't know the word`,
+its `do not` variant, and Inform's `"word" is not necessary` phrasing); `oopsWord`
+cleared in `engineStore`'s internal `event.kind === 'command'` branch (confirmed via
+`protocol-tap.ts` that a *silent* background autosave command never emits a
+`GameEvent` of kind `command` at all, so this never races with the per-turn autosave)
+and (re)computed against the response text in the `input_requested` line-commit branch.
+`npm run lint`/`npm test` (172 tests, up from 164)/`npm run format`/`npm run build` all
+pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): sent `take
+sinbad`, got Bocfel's real `I don't know the word "sinbad".`; the hint chip appeared
+reading `Didn't know "sinbad" — tap the word you meant`; tapping a word in the visible
+text composed `oops <word>` into the draft and cleared the hint; a following ordinary
+command (`look`) showed no hint. Screenshotted in light, dark, and retro — legible in
+all three.
+
 ---
 
 ## Batch 7 — moments that matter: death, risk, reward

@@ -454,6 +454,14 @@
   overflow-y: auto;
 }
 
+/* UX-27: hint shown above the command form when the parser just quoted an unknown
+ * word, so the next tapped word composes an `oops <word>` fix-up. */
+.oops-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 2px var(--space-2);
+}
+
 .command-form {
   display: flex;
   gap: 8px;
