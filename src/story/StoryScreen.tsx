@@ -7,6 +7,7 @@ import { ExitsRow } from './ExitsRow';
 import { VerbChips } from './VerbChips';
 import { TapWords } from './TapWords';
 import { ScoreLogSheet } from './ScoreLogSheet';
+import { GoToSheet } from './GoToSheet';
 import { DebugConsole } from '../debug/DebugConsole';
 import { haptic } from '../haptics';
 
@@ -33,6 +34,8 @@ export function StoryScreen() {
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
   const hasSeenTapHint = useUiStore((s) => s.hasSeenTapHint);
   const dismissTapHint = useUiStore((s) => s.dismissTapHint);
+  const goToSheetOpen = useUiStore((s) => s.goToSheetOpen);
+  const setGoToSheetOpen = useUiStore((s) => s.setGoToSheetOpen);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
@@ -243,6 +246,7 @@ export function StoryScreen() {
       <CommandBar />
       {debugConsoleEnabled && <DebugConsole />}
       {scoreLogOpen && <ScoreLogSheet gameId={gameId} onClose={() => setScoreLogOpen(false)} />}
+      {goToSheetOpen && <GoToSheet onClose={() => setGoToSheetOpen(false)} />}
     </div>
   );
 }

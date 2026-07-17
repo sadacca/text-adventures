@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import { useMapStore } from '../state/mapStore';
-import type { Direction } from '../map/graph';
+import { useUiStore } from '../state/uiStore';
+import { UNKNOWN_ROOM_ID, type Direction } from '../map/graph';
 import { opposite } from '../map/directions';
 import { useKnownExits, useSuggestedExits } from './useKnownExits';
 import { haptic } from '../haptics';
@@ -13,20 +15,43 @@ const ORDER: Direction[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw', 'up', 'd
  *  chips) — soft suggestions, never map-affecting. UX-26: appends a "retrace" chip that
  *  sends the reverse of the player's last successful move — a one-tap way back out of
  *  trouble, distinct from Undo (which rewinds game state; retrace just walks back,
- *  in-fiction, taking a turn like any move). */
+ *  in-fiction, taking a turn like any move). UX-31: a leading "Go to…" chip opens a
+ *  travel sheet once the map knows at least 2 named rooms. */
 export function ExitsRow() {
   const sendCommand = useEngineStore((s) => s.sendCommand);
   const inputType = useEngineStore((s) => s.inputType);
+  const traveling = useEngineStore((s) => s.traveling);
+  const graph = useMapStore((s) => s.graph);
   const lastMoveDir = useMapStore((s) => s.lastMoveDir);
+  const setGoToSheetOpen = useUiStore((s) => s.setGoToSheetOpen);
   const knownExits = useKnownExits();
   const suggestedExits = useSuggestedExits();
   const backDir = lastMoveDir ? opposite(lastMoveDir) : null;
+  const namedRoomCount = useMemo(
+    () => Object.keys(graph.rooms).filter((id) => id !== UNKNOWN_ROOM_ID).length,
+    [graph],
+  );
+  const showGoTo = namedRoomCount >= 2 && inputType === 'line' && !traveling;
 
-  if (knownExits.size === 0 && suggestedExits.size === 0 && backDir === null) return null;
+  if (knownExits.size === 0 && suggestedExits.size === 0 && backDir === null && !showGoTo) {
+    return null;
+  }
 
   return (
     <div className="exits-row" role="toolbar" aria-label="Known exits">
       <span className="exits-row-label">Exits:</span>
+      {showGoTo && (
+        <button
+          type="button"
+          className="chip tap-target"
+          onClick={() => {
+            haptic();
+            setGoToSheetOpen(true);
+          }}
+        >
+          Go to…
+        </button>
+      )}
       {ORDER.filter((dir) => knownExits.has(dir) || suggestedExits.has(dir)).map((dir) =>
         knownExits.has(dir) ? (
           <button

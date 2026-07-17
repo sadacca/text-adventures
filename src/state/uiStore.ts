@@ -29,6 +29,9 @@ export interface UiState {
    *  tap back to auto-follow or load a different game. Session-only, not persisted —
    *  same as roomEditTarget. */
   activeFloor: number | null;
+  /** UX-31: whether the Story tab's "Go to…" travel sheet is open. Session-only, not
+   *  persisted — same reasoning as roomEditTarget (Android back-button trap support). */
+  goToSheetOpen: boolean;
   setTab: (tab: Tab) => void;
   setCommandDraft: (draft: string) => void;
   appendToDraft: (word: string) => void;
@@ -41,6 +44,7 @@ export interface UiState {
   setRoomEditTarget: (id: string | null) => void;
   dismissTapHint: () => void;
   setActiveFloor: (floor: number | null) => void;
+  setGoToSheetOpen: (open: boolean) => void;
 }
 
 /**
@@ -79,6 +83,7 @@ export const useUiStore = create<UiState>()(
       hasSeenTapHint: false,
       roomEditTarget: null,
       activeFloor: null,
+      goToSheetOpen: false,
       setTab: (tab) => set({ tab }),
       setCommandDraft: (commandDraft) => set({ commandDraft }),
       appendToDraft: (word) =>
@@ -98,6 +103,7 @@ export const useUiStore = create<UiState>()(
       setRoomEditTarget: (roomEditTarget) => set({ roomEditTarget }),
       dismissTapHint: () => set({ hasSeenTapHint: true }),
       setActiveFloor: (activeFloor) => set({ activeFloor }),
+      setGoToSheetOpen: (goToSheetOpen) => set({ goToSheetOpen }),
     }),
     persistOptions,
   ),

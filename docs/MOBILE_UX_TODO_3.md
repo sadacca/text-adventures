@@ -532,6 +532,33 @@ the flag is enough).
 Go to… from the Story tab reaches West of House from Forest without touching the Map
 tab; Android back closes the sheet, not the app. All three themes.
 
+**Outcome (2026-07-17): done as specced, with MapScreen's inline confirm-and-travel
+logic extracted first so nothing was duplicated.** New `src/map/travelConfirm.ts`
+(`confirmAndTravel(path)`) lifts MapScreen's existing long-trip confirm dialog + haptics
++ result-to-toast-string mapping out of `handleRoomTap` verbatim — MapScreen now calls
+it too, so the two surfaces share one copy of the strings, not two. New
+`src/story/GoToSheet.tsx` lists named, non-`unknown` rooms (current room excluded),
+sorted alphabetically (no visit-recency field exists on `RoomNode`, exactly as this
+task's own note anticipated), each row's path precomputed with `computePath` so an
+unreachable room renders disabled with "no known path" instead of failing on tap.
+`uiStore` gained `goToSheetOpen`, wired into `backButton.ts` right after
+`roomEditTarget`'s check, same pattern. `npm run lint`/`npm test` (193 tests, up from
+189)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`) — this is also
+where a real geography quirk surfaced: `computePath` only routes over CONFIRMED edges
+(never inferred ones), and this game's house perimeter is genuinely one-way in several
+spots (e.g. `north` from West of House to North of House has no working `south` back —
+confirmed live, "The windows are all boarded."), so a room reached by a single forward
+move often shows "no known path" back until the reverse is actually walked and thereby
+confirmed — exactly the behavior this task's own disabled-row case describes, not a
+bug. Found a genuinely reversible pair (West of House `south`↔`west` South of House) and
+round-tripped it: the sheet listed `West of House` as reachable, tapping it traveled
+there and closed the sheet, while a same-named-but-different `West of House` graph node
+(a rule-6 disambiguation split from earlier exploration) correctly rendered disabled.
+Simulated Android back via `page.goBack()`: closed the sheet without leaving the Story
+tab. Screenshotted in light, dark, and retro — legible in all three.
+
 ### UX-32: Adaptive verb chips (learned from this game's play)
 
 `VERBS` (`src/story/verbs.ts`) is a fixed list of 8. Real games each have 2–3 verbs
