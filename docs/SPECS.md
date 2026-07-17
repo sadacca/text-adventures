@@ -374,6 +374,15 @@ confirmed edge later exists in the same direction (that's the UI-level diffing h
 job, `useSuggestedExits` in `src/story/useKnownExits.ts`, not the graph's). Map rendering
 of suggestions (Task 1.10's other half) is still not built.
 
+**2026-07-17 note (UX-26, retrace chip):** `mapStore` gained `lastMoveDir: Direction |
+null`, tracking the compass direction of the last *successful* movement so `ExitsRow`
+can offer a one-tap "retrace" chip (`opposite(lastMoveDir)`). This is purely UI-derived
+session state, computed in `mapStore.handleEvent` by comparing `currentRoomId` before
+and after each `status_line`'s automapper call against a pending direction stashed off
+the preceding `command` event — it is **not** part of `MapGraph`, is never persisted,
+and never affects edge resolution or any of the rules above. Cleared on a blocked move,
+a teleport, boot, and game switch.
+
 ## 4. IndexedDB schema (`src/storage/db.ts`, via `idb`)
 
 Database `text-adventures`, version 1. One playthrough per game ⇒ `gameId` is the key

@@ -207,6 +207,26 @@ the exits row now ends with `⤺ S`; tapping it returns to West of House and the
 flips to `⤺ N`. Try a blocked direction — the retrace chip disappears (no stale wrong
 suggestion). All three themes.
 
+**Outcome (2026-07-17): done as specced, with one correction to this task's own
+acceptance example.** `lastMoveDir` added to `mapStore` exactly as described (module-
+level `pendingMoveDir` stashed on `command`, resolved on the following `status_line`
+against a captured `before` room id); `ExitsRow` appends the `⤺ <DIR>` chip and relaxes
+its empty-row guard. `npm run lint`/`npm test` (164 tests, up from 159)/`npm run
+format`/`npm run build` all pass, plus a new `tests/mapStore.test.ts`.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`) — this is where the
+one correction comes from: `n` from **West of House** does *not* round-trip via `s`
+(real Bocfel response: "The windows are all boarded." — the house's perimeter is a
+one-way loop in this game, not a reversible grid, confirmed directly against the live
+interpreter, not assumed), so the task's own written acceptance example doesn't hold for
+that specific origin room. The retrace *mechanism* itself is correct and was verified
+end-to-end with a origin/direction pair that does round-trip: from West of House, `n`
+then `n` again reaches Forest Path (chip `⤺ S`); tapping it returns to North of House
+and the chip flips to `⤺ N` exactly as designed. Separately confirmed the blocked case
+(`up` from West of House, and `s` from North of House both block) makes the chip vanish
+with no stale suggestion. Screenshotted in light, dark, and retro — legible in all
+three.
+
 ### UX-27: OOPS-aware "fix last word" flow
 
 Promotes `ZMACHINE_CAPABILITIES_RESEARCH.md` Tier 1 item 2 (researched 2026-07-16,

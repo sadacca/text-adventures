@@ -9,8 +9,10 @@ import {
   renameRoom,
   setRoomFloor,
   setRoomNote,
+  type Direction,
   type MapGraph,
 } from '../map/graph.js';
+import { normalizeDirection } from '../map/directions.js';
 import { computeLayout } from '../map/layout.js';
 import { getMap, saveMap } from '../storage/maps.js';
 
@@ -18,6 +20,10 @@ const SAVE_DEBOUNCE_MS = 500;
 
 interface MapState {
   graph: MapGraph;
+  /** UX-26: the compass direction of the last *successful* movement (currentRoomId
+   *  changed across handleEvent while a normalized direction command was pending), or
+   *  null at boot / after teleports / after a failed move. Session-only, not persisted. */
+  lastMoveDir: Direction | null;
   loadForGame: (gameId: string) => Promise<void>;
   handleEvent: (event: GameEvent) => void;
   reset: () => void;
@@ -39,6 +45,9 @@ interface MapState {
 let automapper: Automapper | null = null;
 let activeGameId: string | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+/** UX-26: the normalized direction of a command event awaiting its status_line, or null
+ *  when the pending command isn't a direction at all. */
+let pendingMoveDir: Direction | null = null;
 
 function flushPendingSave() {
   if (!saveTimer) return;
@@ -65,19 +74,31 @@ function commit(set: (partial: Partial<MapState>) => void) {
 
 export const useMapStore = create<MapState>((set) => ({
   graph: createEmptyGraph(),
+  lastMoveDir: null,
 
   async loadForGame(gameId) {
     flushPendingSave();
     const graph = await getMap(gameId);
     automapper = new Automapper(graph);
     activeGameId = gameId;
-    set({ graph: automapper.graph });
+    pendingMoveDir = null;
+    set({ graph: automapper.graph, lastMoveDir: null });
   },
 
   handleEvent(event) {
     if (!automapper || !activeGameId) return;
+    if (event.kind === 'command') {
+      pendingMoveDir = normalizeDirection(event.text);
+    }
+    const before = automapper.graph.currentRoomId;
     automapper.handleEvent(event);
     computeLayout(automapper.graph);
+    if (event.kind === 'status_line') {
+      if (pendingMoveDir !== null) {
+        set({ lastMoveDir: automapper.graph.currentRoomId !== before ? pendingMoveDir : null });
+      }
+      pendingMoveDir = null;
+    }
     commit(set);
   },
 
@@ -123,7 +144,8 @@ export const useMapStore = create<MapState>((set) => ({
     flushPendingSave();
     automapper = null;
     activeGameId = null;
-    set({ graph: createEmptyGraph() });
+    pendingMoveDir = null;
+    set({ graph: createEmptyGraph(), lastMoveDir: null });
   },
 }));
 

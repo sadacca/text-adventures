@@ -142,6 +142,25 @@ describe('ExitsRow', () => {
     expect(screen.queryByLabelText('Try w (mentioned in the text)')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Go w')).toBeInTheDocument();
   });
+
+  it('UX-26: renders a retrace chip for the reverse of lastMoveDir and sends it on tap', () => {
+    const sendCommand = vi.fn();
+    useEngineStore.setState({ inputType: 'line', sendCommand });
+    useMapStore.setState({ graph: createEmptyGraph(), lastMoveDir: 'n' });
+
+    render(<ExitsRow />);
+    const retrace = screen.getByLabelText('Retrace: go s');
+    fireEvent.click(retrace);
+    expect(sendCommand).toHaveBeenCalledWith('s');
+  });
+
+  it('UX-26: renders no retrace chip when lastMoveDir is null', () => {
+    useEngineStore.setState({ inputType: 'line', sendCommand: vi.fn() });
+    useMapStore.setState({ graph: createEmptyGraph(), lastMoveDir: null });
+
+    render(<ExitsRow />);
+    expect(screen.queryByLabelText(/Retrace/)).not.toBeInTheDocument();
+  });
 });
 
 describe('TapWords', () => {
