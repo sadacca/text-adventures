@@ -6,6 +6,7 @@ import { CompassRose } from './CompassRose';
 import { ExitsRow } from './ExitsRow';
 import { VerbChips } from './VerbChips';
 import { TapWords } from './TapWords';
+import { ScoreLogSheet } from './ScoreLogSheet';
 import { DebugConsole } from '../debug/DebugConsole';
 import { haptic } from '../haptics';
 
@@ -34,6 +35,7 @@ export function StoryScreen() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const [newBelow, setNewBelow] = useState(false);
+  const [scoreLogOpen, setScoreLogOpen] = useState(false);
 
   // UX-11: show a score-increase callout, then auto-dismiss. Keyed on the whole
   // scoreDelta object, so a new delta (even an equal amount) cancels any pending dismiss
@@ -122,7 +124,17 @@ export function StoryScreen() {
       {status && (
         <div className="status-line">
           <span className="status-line-room">{status.left}</span>
-          <span className="status-line-score">{status.right}</span>
+          <button
+            type="button"
+            className="status-line-score"
+            aria-label="Score log"
+            onClick={() => {
+              haptic();
+              setScoreLogOpen(true);
+            }}
+          >
+            {status.right}
+          </button>
           <button
             type="button"
             className="status-line-undo tap-target"
@@ -203,6 +215,7 @@ export function StoryScreen() {
       )}
       <CommandBar />
       {debugConsoleEnabled && <DebugConsole />}
+      {scoreLogOpen && <ScoreLogSheet gameId={gameId} onClose={() => setScoreLogOpen(false)} />}
     </div>
   );
 }

@@ -25,6 +25,7 @@ import { useMapStore } from './mapStore.js';
 import { useDialogStore } from './dialogStore.js';
 import { detectUnknownWord } from '../story/oops.js';
 import { detectDeath } from '../story/death.js';
+import { appendScoreEntry } from '../storage/scoreLog.js';
 
 /** DebugConsole's live event feed (Task 1.4): capped so a long session can't leak memory. */
 const DEBUG_EVENT_LIMIT = 300;
@@ -299,7 +300,16 @@ export const useEngineStore = create<EngineState>((set, get) => ({
           const score = Number(scoreMatch[1]);
           if (!resuming && previousScore !== null && score > previousScore) {
             scoreDeltaCounter += 1;
-            set({ scoreDelta: { amount: score - previousScore, id: scoreDeltaCounter } });
+            const amount = score - previousScore;
+            set({ scoreDelta: { amount, id: scoreDeltaCounter } });
+            // UX-29: pendingCommand is still the command that led to this status_line
+            // (input_requested, which clears it, hasn't run yet for this turn).
+            void appendScoreEntry(gameId, {
+              turn: event.turn,
+              amount,
+              command: pendingCommand ?? '',
+              room: event.left,
+            });
           }
           previousScore = score;
         }

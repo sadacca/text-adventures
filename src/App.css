@@ -131,8 +131,15 @@
   font-weight: 600;
 }
 
+/* UX-29: tappable to open the score log, but reads as plain status-line text, not a
+ * button — reset the global button chrome. */
 .status-line-score {
   color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font: inherit;
 }
 
 /* UX-22: undo button docked to the status line's right edge. margin-left: auto keeps
@@ -968,6 +975,35 @@
 .room-edit-actions button.btn-danger {
   padding: 0 16px;
   border-radius: 6px;
+}
+
+/* UX-29: score log sheet contents — reuses .room-edit-backdrop/.room-edit-sheet for
+ * the bottom-sheet chrome itself. */
+.score-log-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.score-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.score-log-entry {
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+.score-log-amount {
+  font-weight: 600;
+  color: var(--accent);
 }
 
 .dialog-options {

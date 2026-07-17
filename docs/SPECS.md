@@ -385,8 +385,8 @@ a teleport, boot, and game switch.
 
 ## 4. IndexedDB schema (`src/storage/db.ts`, via `idb`)
 
-Database `text-adventures`, version 1. One playthrough per game ⇒ `gameId` is the key
-almost everywhere.
+Database `text-adventures`, version 2 (see the dated note below for the migration
+history). One playthrough per game ⇒ `gameId` is the key almost everywhere.
 
 | Store | Key | Value | Notes |
 |---|---|---|---|
@@ -395,10 +395,11 @@ almost everywhere.
 | `saves` | `[gameId, name]` | `{ gameId, name, quetzal: ArrayBuffer, turn, savedAt }` | named in-game saves; export = download this blob |
 | `maps` | `gameId` | `MapGraph` (JSON-serializable) | whole graph as one record; write-behind, debounced 500 ms |
 | `transcripts` | `gameId` | `{ gameId, entries: { turn, command, response }[] }` | ring-buffer capped at 2000 entries |
+| `scoreLog` | `gameId` | `{ gameId, entries: { turn, amount, command, room }[] }` | ring-buffer capped at 500 entries (UX-29) |
 | `settings` | fixed key `'app'` | `{ theme, fontSize, llm?: { provider, model }, art?: {...} }` | **API keys live in `localStorage`, NOT here** |
 
-Restart flow: confirm dialog → delete `autosaves`, `maps`, `transcripts` rows for
-`gameId` (keep `games` and named `saves`) → start fresh.
+Restart flow: confirm dialog → delete `autosaves`, `maps`, `transcripts`, `scoreLog` rows
+for `gameId` (keep `games` and named `saves`) → start fresh.
 
 **2026-07-14 note (UX-15):** the `settings` IndexedDB row sketched above was never built.
 `src/state/uiStore.ts` instead persists `theme`/`fontScale`/`storyFont` via zustand's
@@ -437,6 +438,17 @@ autosave, still in flight) — guarding against incorrectly unmasking an in-flig
 round-trip's own response. Live-verified via DebugConsole's `[silent]` tags against the
 real game: before the fix, every timer tick after the per-turn autosave showed
 `input_requested (line) [silent]`; after, they show plain `input_requested (line)`.
+
+**2026-07-17 note (UX-29): first real schema migration, DB bumped to version 2.** New
+`scoreLog` store, keyed by `gameId`, holding `{ gameId, entries: { turn, amount, command,
+room }[] }` — same single-record-per-game shape as `transcripts`, capped at 500 entries.
+Every prior store was created unconditionally in version 1's `upgrade` callback (no
+migration had ever actually run), so this is the first use of `idb`'s `oldVersion` gate:
+`upgrade(db, oldVersion)` now wraps the original version-1 stores in `if (oldVersion <
+1)` and adds `scoreLog` in `if (oldVersion < 2)` — existing rows in every other store are
+untouched. Future stores should extend this same ladder rather than re-creating the
+whole callback. Wired into `deleteGame`/`restartPlaythrough` alongside the other
+per-playthrough stores.
 
 ## 5. Component inventory (React, `src/`)
 

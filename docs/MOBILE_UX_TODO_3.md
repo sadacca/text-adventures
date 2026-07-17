@@ -421,6 +421,33 @@ does not score; entering the house/getting the egg does — any scoring action w
 tap the score in the status line, see the entry with command and room. Restart the
 playthrough — log is empty again. All three themes.
 
+**Outcome (2026-07-17): done as specced, one file skipped.** `scoreLog` object store
+added via a real `oldVersion`-gated `db.ts` upgrade callback (version 2; this is the
+schema's first actual migration, since version 1 created every store unconditionally —
+established the `if (oldVersion < N)` pattern future stores should follow). New
+`src/storage/scoreLog.ts` mirrors `transcripts.ts` exactly (500-entry cap, same slice
+pattern); wired into both `deleteGame` and `restartPlaythrough`. `engineStore` fires
+`appendScoreEntry` in the same `status_line` branch as `scoreDelta`, using `event.turn`
+(confirmed via `protocol-tap.ts` to be the exact turn shared by that turn's `buffer_text`/
+`status_line`/`input_requested` — more precise than `lastKnownTurn`, which still holds
+the *previous* turn at this point since `input_requested` hasn't run yet) and the
+module-level `pendingCommand`, which — also confirmed by reading the surrounding code —
+is still set at this point in the event stream (cleared only later, in
+`input_requested`). New `src/story/ScoreLogSheet.tsx` reuses `RoomEditSheet`'s bottom-
+sheet chrome (`.room-edit-backdrop`/`.room-edit-sheet`) rather than inventing new
+classes. **`src/more/MoreScreen.tsx` was NOT touched** — the task named it as a file to
+change but the task's own body never describes what MoreScreen-side behavior would be;
+the sheet opens entirely from the Story tab's status line, which is where the task's own
+acceptance check drives it, so this looks like a copy-paste artifact from a similar task
+rather than a real requirement (same category of drift as UX-26's acceptance example).
+`npm run lint`/`npm test` (184 tests, up from 178)/`npm run format`/`npm run build` all
+pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): the score button
+opened the sheet showing "No points yet — they'll be logged here." before scoring;
+after entering the house through the window (+10), the sheet showed `+10 · west ·
+Kitchen`. Screenshotted in light, dark, and retro — legible in all three.
+
 ### UX-30: One-tap checkpoint from the story screen [visual check]
 
 "I'm about to try something risky" is a core IF pattern; named saves exist but live

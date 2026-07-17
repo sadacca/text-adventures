@@ -10,6 +10,7 @@ import { ExitsRow } from '../src/story/ExitsRow';
 import { TapWords } from '../src/story/TapWords';
 import { CommandBar } from '../src/story/CommandBar';
 import { StoryScreen } from '../src/story/StoryScreen';
+import { appendScoreEntry } from '../src/storage/scoreLog';
 
 const uiInitial = useUiStore.getState();
 const engineInitial = useEngineStore.getState();
@@ -461,5 +462,33 @@ describe('StoryScreen death banner (UX-28)', () => {
     });
     render(<StoryScreen />);
     expect(screen.queryByText('☠ Undo that move?')).not.toBeInTheDocument();
+  });
+});
+
+describe('StoryScreen score log (UX-29)', () => {
+  it('opens the score log sheet from the status line and shows a seeded entry', async () => {
+    const gameId = 'game-score-ui';
+    await appendScoreEntry(gameId, { turn: 3, amount: 5, command: 'take egg', room: 'Forest' });
+    useEngineStore.setState({
+      gameId,
+      status: { left: 'Forest', right: 'Score: 5  Moves: 3' },
+    });
+    render(<StoryScreen />);
+    fireEvent.click(screen.getByLabelText('Score log'));
+    expect(
+      await screen.findByText(
+        (_, node) => node?.tagName === 'LI' && node.textContent === '+5 · take egg · Forest',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the empty state when there are no score entries yet', async () => {
+    useEngineStore.setState({
+      gameId: 'game-score-empty',
+      status: { left: 'Forest', right: 'Score: 0  Moves: 0' },
+    });
+    render(<StoryScreen />);
+    fireEvent.click(screen.getByLabelText('Score log'));
+    expect(await screen.findByText("No points yet — they'll be logged here.")).toBeInTheDocument();
   });
 });
