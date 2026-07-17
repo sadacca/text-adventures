@@ -58,7 +58,7 @@ export async function renameGame(gameId: string, title: string): Promise<void> {
 }
 
 async function deleteAllForGame(
-  storeName: 'autosaves' | 'saves' | 'maps' | 'transcripts' | 'scoreLog',
+  storeName: 'autosaves' | 'saves' | 'maps' | 'transcripts' | 'scoreLog' | 'verbStats',
   gameId: string,
 ) {
   const db = await getDb();
@@ -73,8 +73,8 @@ async function deleteAllForGame(
   await tx.done;
 }
 
-/** Deletes a game entirely, including its autosaves, named saves, map, transcript, and
- *  score log. */
+/** Deletes a game entirely, including its autosaves, named saves, map, transcript,
+ *  score log, and learned-verb stats. */
 export async function deleteGame(gameId: string): Promise<void> {
   const db = await getDb();
   await Promise.all([
@@ -83,13 +83,15 @@ export async function deleteGame(gameId: string): Promise<void> {
     deleteAllForGame('maps', gameId),
     deleteAllForGame('transcripts', gameId),
     deleteAllForGame('scoreLog', gameId),
+    deleteAllForGame('verbStats', gameId),
   ]);
   await db.delete('games', gameId);
 }
 
 /**
  * "Restart" (SPECS.md §4): wipes the live playthrough bundle (autosaves, map,
- * transcript, score log) but keeps the game itself and any deliberately-named saves.
+ * transcript, score log, learned-verb stats) but keeps the game itself and any
+ * deliberately-named saves.
  */
 export async function restartPlaythrough(gameId: string): Promise<void> {
   await Promise.all([
@@ -97,5 +99,6 @@ export async function restartPlaythrough(gameId: string): Promise<void> {
     deleteAllForGame('maps', gameId),
     deleteAllForGame('transcripts', gameId),
     deleteAllForGame('scoreLog', gameId),
+    deleteAllForGame('verbStats', gameId),
   ]);
 }

@@ -52,6 +52,21 @@ describe('VerbChips', () => {
     render(<VerbChips />);
     expect(screen.getByText('Look').closest('button')).toBeDisabled();
   });
+
+  it('UX-32: renders a learned chip after threshold and inserts it into the draft on tap', () => {
+    useEngineStore.setState({ inputType: 'line', learnedVerbs: ['unlock'] });
+    render(<VerbChips />);
+    const chip = screen.getByText('unlock');
+    expect(chip).toHaveClass('chip-learned');
+    fireEvent.click(chip);
+    expect(useUiStore.getState().commandDraft).toBe('unlock');
+  });
+
+  it('UX-32: renders no learned chips when learnedVerbs is empty', () => {
+    useEngineStore.setState({ inputType: 'line', learnedVerbs: [] });
+    const { container } = render(<VerbChips />);
+    expect(container.querySelectorAll('.chip-learned')).toHaveLength(0);
+  });
 });
 
 describe('CompassRose', () => {

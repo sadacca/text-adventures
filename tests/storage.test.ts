@@ -15,6 +15,7 @@ import {
 import { deleteMap, getMap, saveMap } from '../src/storage/maps';
 import { createEmptyGraph } from '../src/map/graph';
 import { appendScoreEntry, getScoreLog } from '../src/storage/scoreLog';
+import { bumpVerb, getVerbCounts } from '../src/storage/verbStats';
 
 function bytes(seed: number, length = 32): Uint8Array {
   const arr = new Uint8Array(length);
@@ -63,11 +64,13 @@ describe('games store', () => {
       command: 'take egg',
       room: 'Forest',
     });
+    await bumpVerb(game.gameId, 'unlock');
     await deleteGame(game.gameId);
     expect(await getGame(game.gameId)).toBeUndefined();
     expect(await getLatestAutosave(game.gameId)).toBeNull();
     expect(await listSaves(game.gameId)).toHaveLength(0);
     expect(await getScoreLog(game.gameId)).toHaveLength(0);
+    expect(await getVerbCounts(game.gameId)).toEqual({});
   });
 });
 
@@ -202,6 +205,20 @@ describe('UX-29: scoreLog', () => {
     expect(entries).toHaveLength(500);
     expect(entries[0].turn).toBe(2);
     expect(entries[entries.length - 1].turn).toBe(501);
+  });
+});
+
+describe('UX-32: verbStats', () => {
+  it('returns an empty record for a game with no verbStats row', async () => {
+    expect(await getVerbCounts('never-played-a-verb')).toEqual({});
+  });
+
+  it('bumpVerb increments per-verb counts and returns the new count, round-tripping through getVerbCounts', async () => {
+    const gameId = 'game-verb-roundtrip';
+    expect(await bumpVerb(gameId, 'unlock')).toBe(1);
+    expect(await bumpVerb(gameId, 'unlock')).toBe(2);
+    expect(await bumpVerb(gameId, 'push')).toBe(1);
+    expect(await getVerbCounts(gameId)).toEqual({ unlock: 2, push: 1 });
   });
 });
 

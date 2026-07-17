@@ -371,6 +371,12 @@
   color: var(--text-dim);
 }
 
+/* UX-32: a verb learned from the player's own play — dotted so it's visually distinct
+ * from both a built-in chip and a dashed .chip-suggested. */
+.chip-learned {
+  border-style: dotted;
+}
+
 .exits-row {
   display: flex;
   align-items: center;

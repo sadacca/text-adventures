@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createEngine } from '../engine/engine.js';
-import { parseVocabulary, type Vocabulary } from '../engine/dictionary.js';
+import { parseVocabulary, isVocabWord, type Vocabulary } from '../engine/dictionary.js';
 import type { RawMessage } from '../engine/protocol-tap.js';
 import type { EngineHandle, GameEvent } from '../engine/types.js';
 import {
@@ -21,11 +21,33 @@ import {
 } from '../storage/transcripts.js';
 import type { TranscriptEntry } from '../storage/db.js';
 import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
+import { normalizeDirection } from '../map/directions.js';
 import { useMapStore } from './mapStore.js';
 import { useDialogStore } from './dialogStore.js';
 import { detectUnknownWord } from '../story/oops.js';
 import { detectDeath } from '../story/death.js';
 import { appendScoreEntry } from '../storage/scoreLog.js';
+import { bumpVerb, getVerbCounts } from '../storage/verbStats.js';
+import { VERBS } from '../story/verbs.js';
+
+/** UX-32: recompute learnedVerbs after this many newly-counted commands, not per
+ *  keystroke/command. */
+const LEARNED_VERBS_REFRESH_INTERVAL = 10;
+/** UX-32: only surface a learned verb once it's been used at least this many times. */
+const LEARNED_VERB_MIN_COUNT = 3;
+/** UX-32: at most this many learned chips render, appended to the built-in row. */
+const LEARNED_VERBS_LIMIT = 3;
+
+const BUILTIN_VERB_COMMANDS = new Set(VERBS.map((v) => v.command));
+
+/** UX-32: top learnedVerbs by count (ties broken alphabetically for determinism). */
+function topLearnedVerbs(counts: Record<string, number>): string[] {
+  return Object.entries(counts)
+    .filter(([, count]) => count >= LEARNED_VERB_MIN_COUNT)
+    .sort(([verbA, countA], [verbB, countB]) => countB - countA || verbA.localeCompare(verbB))
+    .slice(0, LEARNED_VERBS_LIMIT)
+    .map(([verb]) => verb);
+}
 
 /** DebugConsole's live event feed (Task 1.4): capped so a long session can't leak memory. */
 const DEBUG_EVENT_LIMIT = 300;
@@ -136,6 +158,12 @@ interface EngineState {
    *  retrigger-on-repeat pattern as scoreDelta's id counter). Session-only. */
   checkpointSaved: { id: number } | null;
 
+  /** UX-32: top learned verbs (count >= LEARNED_VERB_MIN_COUNT) for this game, loaded
+   *  once on openGame and refreshed lazily every LEARNED_VERBS_REFRESH_INTERVALth
+   *  counted command — see the module-level counting logic. Session-only (the durable
+   *  data lives in storage/verbStats.ts). */
+  learnedVerbs: string[];
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -172,6 +200,8 @@ let recordedRaw: RawMessage[] = [];
 let previousScore: number | null = null;
 let scoreDeltaCounter = 0;
 let checkpointSavedCounter = 0;
+/** UX-32: newly-counted (bumped) commands since the last learnedVerbs refresh. */
+let countedVerbsSinceRefresh = 0;
 
 function teardownActiveSession() {
   activeCleanup?.();
@@ -181,6 +211,7 @@ function teardownActiveSession() {
   activeGameId = null;
   lastKnownTurn = 0;
   previousScore = null;
+  countedVerbsSinceRefresh = 0;
 }
 
 export const useEngineStore = create<EngineState>((set, get) => ({
@@ -206,6 +237,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   oopsWord: null,
   deathDetected: false,
   checkpointSaved: null,
+  learnedVerbs: [],
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -236,6 +268,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       oopsWord: null,
       deathDetected: false,
       checkpointSaved: null,
+      learnedVerbs: [],
     });
 
     const game = await getGame(gameId);
@@ -247,6 +280,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     const lastPlayedAtBeforeTouch = game.lastPlayedAt;
     set({ gameTitle: game.title });
     set({ vocabulary: parseVocabulary(new Uint8Array(game.bytes)) });
+    void getVerbCounts(gameId).then((counts) => set({ learnedVerbs: topLearnedVerbs(counts) }));
 
     const engine = createEngine();
     activeEngine = engine;
@@ -297,6 +331,34 @@ export const useEngineStore = create<EngineState>((set, get) => ({
         pendingCommand = event.text;
         pendingResponseChunks = [];
         set({ oopsWord: null, deathDetected: false });
+
+        // UX-32: learn verbs from the player's own successful usage — never a direction,
+        // never a built-in chip verb, never a non-vocab typo (when a vocabulary is
+        // loaded at all).
+        const firstWord = event.text.trim().split(/\s+/)[0]?.toLowerCase();
+        const vocab = get().vocabulary;
+        if (
+          firstWord &&
+          firstWord.length >= 3 &&
+          !BUILTIN_VERB_COMMANDS.has(firstWord) &&
+          normalizeDirection(firstWord) === null &&
+          (vocab === null || isVocabWord(firstWord, vocab))
+        ) {
+          countedVerbsSinceRefresh += 1;
+          const dueForPeriodicRefresh = countedVerbsSinceRefresh >= LEARNED_VERBS_REFRESH_INTERVAL;
+          if (dueForPeriodicRefresh) countedVerbsSinceRefresh = 0;
+          void bumpVerb(gameId, firstWord).then((newCount) => {
+            // Refresh immediately the moment a verb first crosses the reveal threshold
+            // (the common case a player actually notices), not just on the periodic
+            // every-Nth-command cadence, which exists to avoid a DB read on every single
+            // command once the list has already settled.
+            if (dueForPeriodicRefresh || newCount === LEARNED_VERB_MIN_COUNT) {
+              void getVerbCounts(gameId).then((counts) =>
+                set({ learnedVerbs: topLearnedVerbs(counts) }),
+              );
+            }
+          });
+        }
         return;
       }
 
@@ -473,6 +535,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       oopsWord: null,
       deathDetected: false,
       checkpointSaved: null,
+      learnedVerbs: [],
     });
   },
 

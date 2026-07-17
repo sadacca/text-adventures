@@ -58,6 +58,13 @@ export interface ScoreLogRecord {
   entries: ScoreLogEntry[];
 }
 
+/** UX-32: per-game learned-verb usage counts, keyed by the lowercased first word of
+ *  each counted command. */
+export interface VerbStatsRecord {
+  gameId: string;
+  counts: Record<string, number>;
+}
+
 interface TextAdventuresDb extends DBSchema {
   games: { key: string; value: GameRecord };
   autosaves: { key: [string, number]; value: AutosaveRecord };
@@ -66,10 +73,11 @@ interface TextAdventuresDb extends DBSchema {
   transcripts: { key: string; value: TranscriptRecord };
   settings: { key: string; value: SettingsRecord };
   scoreLog: { key: string; value: ScoreLogRecord };
+  verbStats: { key: string; value: VerbStatsRecord };
 }
 
 const DB_NAME = 'text-adventures';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<TextAdventuresDb>> | null = null;
 
@@ -87,6 +95,9 @@ export function getDb(): Promise<IDBPDatabase<TextAdventuresDb>> {
         }
         if (oldVersion < 2) {
           db.createObjectStore('scoreLog', { keyPath: 'gameId' });
+        }
+        if (oldVersion < 3) {
+          db.createObjectStore('verbStats', { keyPath: 'gameId' });
         }
       },
     });

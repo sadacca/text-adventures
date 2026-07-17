@@ -596,6 +596,31 @@ success-only filtering is out of scope, the vocab check is the filter) — a dot
 `turn` chip appears at the row's end and composes into the draft. Survives reload
 (IndexedDB). All three themes.
 
+**Outcome (2026-07-17): done as specced, with one refinement beyond the letter of step
+3.** `verbStats` store added (version 3; follows the `oldVersion`-gated ladder UX-29
+established). Counting happens in the same `event.kind === 'command'` branch as UX-27/28,
+filtered exactly as specced (not a built-in, not a direction, length >= 3, vocab-checked
+when a dictionary is loaded). **Refinement:** step 3 says refresh `learnedVerbs` only
+every 10th counted command — implemented literally, that means a verb's chip wouldn't
+appear until 10 *any* qualifying commands had passed, even once that verb itself had
+long since cleared the reveal threshold (3 uses) — which directly contradicts this
+task's own acceptance example ("turn three times… a dotted turn chip appears"). Fixed by
+also refreshing immediately the moment `bumpVerb`'s returned count exactly equals the
+reveal threshold (the common, acceptance-relevant case), keeping the every-10th sweep as
+a catch-all for anything seeded outside this session's own bump flow. `npm run
+lint`/`npm test` (204 tests, up from 193)/`npm run format`/`npm run build` all pass. (One
+more small doc/reality mismatch, noted but not acted on: the acceptance text calls `read`
+a "built-in" — it isn't in `VERBS`, so it's actually itself learnable; harmless here since
+it never reached the reveal threshold in this check.)
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): `open mailbox` /
+`read leaflet` (no chip yet), then `turn lamp on` / `turn lamp off` / `turn dial` three
+times — a dotted `turn` chip appeared at the end of the row immediately, tapping it
+inserted `turn` into the draft, and it survived a full page reload (confirming the
+IndexedDB round-trip, not just in-memory state). Screenshotted in light, dark, and
+retro — legible and visually distinct from both a built-in chip and `.chip-suggested`'s
+dashed style in all three.
+
 ---
 
 ## Batch 9 — reading surface and library polish
