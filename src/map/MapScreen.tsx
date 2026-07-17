@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEngineStore } from '../state/engineStore';
 import { useMapStore } from '../state/mapStore';
-import { useDialogStore } from '../state/dialogStore';
 import { useUiStore } from '../state/uiStore';
-import { computePath, isLongTrip } from './travel';
+import { computePath } from './travel';
+import { confirmAndTravel } from './travelConfirm';
 import type { MapGraph, RoomEdge, RoomNode } from './graph';
 import { isCompassDirection, isStubDirection } from './directions';
 import { RoomEditSheet } from './RoomEditSheet';
-import { haptic } from '../haptics';
 
 const UNIT = 110; // px per grid cell
 const ROOM_W = 92;
@@ -150,7 +149,6 @@ export function MapScreen() {
   const gameId = useEngineStore((s) => s.gameId);
   const inputType = useEngineStore((s) => s.inputType);
   const traveling = useEngineStore((s) => s.traveling);
-  const travelTo = useEngineStore((s) => s.travelTo);
   const graph = useMapStore((s) => s.graph);
   const moveRoom = useMapStore((s) => s.moveRoom);
 
@@ -340,25 +338,8 @@ export function MapScreen() {
       setToast('No known path to that room yet.');
       return;
     }
-    if (path.length === 0) return;
-    if (isLongTrip(path)) {
-      const proceed = await useDialogStore.getState().ask({
-        kind: 'confirm',
-        title: `This trip is ${path.length} turns`,
-        body: 'Lamp/hunger timers burn down. Continue?',
-        confirmLabel: 'Travel',
-      });
-      if (!proceed) return;
-    }
-    const result = await travelTo(path);
-    if (result === 'completed') {
-      haptic(30);
-    } else {
-      haptic([30, 60, 30]);
-      if (result === 'blocked') setToast('Travel stopped — something unexpected happened.');
-      else if (result === 'question') setToast('Travel stopped — the game is asking a question.');
-      else if (result === 'char_input') setToast('Travel stopped — the game wants a keypress.');
-    }
+    const message = await confirmAndTravel(path);
+    if (message) setToast(message);
   }
 
   if (!gameId) {

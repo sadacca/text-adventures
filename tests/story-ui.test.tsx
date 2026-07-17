@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useEngineStore } from '../src/state/engineStore';
 import { useUiStore } from '../src/state/uiStore';
 import { useMapStore } from '../src/state/mapStore';
@@ -10,6 +10,7 @@ import { ExitsRow } from '../src/story/ExitsRow';
 import { TapWords } from '../src/story/TapWords';
 import { CommandBar } from '../src/story/CommandBar';
 import { StoryScreen } from '../src/story/StoryScreen';
+import { appendScoreEntry } from '../src/storage/scoreLog';
 
 const uiInitial = useUiStore.getState();
 const engineInitial = useEngineStore.getState();
@@ -50,6 +51,21 @@ describe('VerbChips', () => {
     useEngineStore.setState({ inputType: null });
     render(<VerbChips />);
     expect(screen.getByText('Look').closest('button')).toBeDisabled();
+  });
+
+  it('UX-32: renders a learned chip after threshold and inserts it into the draft on tap', () => {
+    useEngineStore.setState({ inputType: 'line', learnedVerbs: ['unlock'] });
+    render(<VerbChips />);
+    const chip = screen.getByText('unlock');
+    expect(chip).toHaveClass('chip-learned');
+    fireEvent.click(chip);
+    expect(useUiStore.getState().commandDraft).toBe('unlock');
+  });
+
+  it('UX-32: renders no learned chips when learnedVerbs is empty', () => {
+    useEngineStore.setState({ inputType: 'line', learnedVerbs: [] });
+    const { container } = render(<VerbChips />);
+    expect(container.querySelectorAll('.chip-learned')).toHaveLength(0);
   });
 });
 
@@ -141,6 +157,25 @@ describe('ExitsRow', () => {
     render(<ExitsRow />);
     expect(screen.queryByLabelText('Try w (mentioned in the text)')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Go w')).toBeInTheDocument();
+  });
+
+  it('UX-26: renders a retrace chip for the reverse of lastMoveDir and sends it on tap', () => {
+    const sendCommand = vi.fn();
+    useEngineStore.setState({ inputType: 'line', sendCommand });
+    useMapStore.setState({ graph: createEmptyGraph(), lastMoveDir: 'n' });
+
+    render(<ExitsRow />);
+    const retrace = screen.getByLabelText('Retrace: go s');
+    fireEvent.click(retrace);
+    expect(sendCommand).toHaveBeenCalledWith('s');
+  });
+
+  it('UX-26: renders no retrace chip when lastMoveDir is null', () => {
+    useEngineStore.setState({ inputType: 'line', sendCommand: vi.fn() });
+    useMapStore.setState({ graph: createEmptyGraph(), lastMoveDir: null });
+
+    render(<ExitsRow />);
+    expect(screen.queryByLabelText(/Retrace/)).not.toBeInTheDocument();
   });
 });
 
@@ -246,6 +281,21 @@ describe('TapWords', () => {
     render(<TapWords text="A brass lamp sits here." />);
     expect(screen.getByText('lamp')).not.toHaveClass('tap-word-vocab');
   });
+
+  it('UX-27: composes "oops <word>" when oopsWord is set and the draft is empty', () => {
+    useEngineStore.setState({ oopsWord: 'sinbad' });
+    render(<TapWords text="There is a sword here." />);
+    fireEvent.click(screen.getByText('sword'));
+    expect(useUiStore.getState().commandDraft).toBe('oops sword');
+    expect(useEngineStore.getState().oopsWord).toBeNull();
+  });
+
+  it('UX-27: taps normally when oopsWord is null', () => {
+    useEngineStore.setState({ oopsWord: null });
+    render(<TapWords text="There is a sword here." />);
+    fireEvent.click(screen.getByText('sword'));
+    expect(useUiStore.getState().commandDraft).toBe('sword');
+  });
 });
 
 describe('CommandBar', () => {
@@ -343,6 +393,20 @@ describe('CommandBar', () => {
     expect(sendChar).toHaveBeenCalledWith('n');
     expect(keyInput).toHaveValue('');
   });
+
+  it('UX-27: shows the oops hint when oopsWord is set and the draft is empty', () => {
+    useEngineStore.setState({ inputType: 'line', oopsWord: 'sinbad' });
+    useUiStore.setState({ commandDraft: '' });
+    render(<CommandBar />);
+    expect(screen.getByText("Didn't know “sinbad” — tap the word you meant")).toBeInTheDocument();
+  });
+
+  it('UX-27: hides the oops hint once the draft has text', () => {
+    useEngineStore.setState({ inputType: 'line', oopsWord: 'sinbad' });
+    useUiStore.setState({ commandDraft: 'oops ' });
+    render(<CommandBar />);
+    expect(screen.queryByText(/Didn.t know/)).not.toBeInTheDocument();
+  });
 });
 
 describe('engineStore pinRequestId', () => {
@@ -364,5 +428,162 @@ describe('StoryScreen status line', () => {
     render(<StoryScreen />);
     fireEvent.click(screen.getByLabelText('Undo last move'));
     expect(undoLastMove).toHaveBeenCalled();
+  });
+
+  it('UX-30: renders a checkpoint button next to Undo, wired to saveCheckpoint', () => {
+    const saveCheckpoint = vi.fn();
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 1' },
+      saveCheckpoint,
+    });
+    render(<StoryScreen />);
+    const undo = screen.getByLabelText('Undo last move');
+    const checkpoint = screen.getByLabelText('Save checkpoint');
+    expect(
+      checkpoint.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+    fireEvent.click(checkpoint);
+    expect(saveCheckpoint).toHaveBeenCalled();
+  });
+});
+
+describe('StoryScreen recap card (UX-25)', () => {
+  it('renders recapEntries and dismisses via Continue', () => {
+    const dismissRecap = vi.fn();
+    useUiStore.setState({ hasSeenTapHint: true });
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 4' },
+      recapEntries: [
+        { command: 'e', response: 'East' },
+        { command: 's', response: 'South' },
+        { command: 'w', response: 'West' },
+      ],
+      dismissRecap,
+    });
+    render(<StoryScreen />);
+    expect(screen.getByText('While you were away…')).toBeInTheDocument();
+    expect(screen.getByText("You're at: West of House")).toBeInTheDocument();
+    expect(screen.getByText('Last moves: e · s · w')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Continue'));
+    expect(dismissRecap).toHaveBeenCalled();
+  });
+});
+
+describe('StoryScreen death banner (UX-28)', () => {
+  it('renders the undo offer when deathDetected is true and wires Undo', () => {
+    const undoLastMove = vi.fn();
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'Cellar', right: 'Score: 0  Moves: 12' },
+      deathDetected: true,
+      undoLastMove,
+    });
+    render(<StoryScreen />);
+    expect(screen.getByText('☠ Undo that move?')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Undo'));
+    expect(undoLastMove).toHaveBeenCalled();
+  });
+
+  it('renders nothing when deathDetected is false', () => {
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'Cellar', right: 'Score: 0  Moves: 12' },
+      deathDetected: false,
+    });
+    render(<StoryScreen />);
+    expect(screen.queryByText('☠ Undo that move?')).not.toBeInTheDocument();
+  });
+});
+
+describe('StoryScreen score log (UX-29)', () => {
+  it('opens the score log sheet from the status line and shows a seeded entry', async () => {
+    const gameId = 'game-score-ui';
+    await appendScoreEntry(gameId, { turn: 3, amount: 5, command: 'take egg', room: 'Forest' });
+    useEngineStore.setState({
+      gameId,
+      status: { left: 'Forest', right: 'Score: 5  Moves: 3' },
+    });
+    render(<StoryScreen />);
+    fireEvent.click(screen.getByLabelText('Score log'));
+    expect(
+      await screen.findByText(
+        (_, node) => node?.tagName === 'LI' && node.textContent === '+5 · take egg · Forest',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the empty state when there are no score entries yet', async () => {
+    useEngineStore.setState({
+      gameId: 'game-score-empty',
+      status: { left: 'Forest', right: 'Score: 0  Moves: 0' },
+    });
+    render(<StoryScreen />);
+    fireEvent.click(screen.getByLabelText('Score log'));
+    expect(await screen.findByText("No points yet — they'll be logged here.")).toBeInTheDocument();
+  });
+});
+
+describe('StoryScreen reading mode (UX-35)', () => {
+  /** jsdom has no real layout, so scroll geometry has to be defined by hand — there's
+   *  no prior scroll test in this file to follow, per this task's own fallback note. */
+  function setScrollGeometry(
+    el: HTMLElement,
+    { scrollTop, scrollHeight, clientHeight }: Record<string, number>,
+  ) {
+    Object.defineProperty(el, 'scrollTop', {
+      value: scrollTop,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+  }
+
+  it('adds reading-mode when scrolled away from the bottom, and clears it once re-pinned via the new-text pill', () => {
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 1' },
+      transcript: ['West of House'],
+    });
+    const { container } = render(<StoryScreen />);
+    const transcriptEl = container.querySelector('.story-transcript')!;
+    const screenRoot = container.querySelector('.story-screen')!;
+
+    // Scrolled well up: far from the bottom.
+    setScrollGeometry(transcriptEl as HTMLElement, {
+      scrollTop: 0,
+      scrollHeight: 2000,
+      clientHeight: 500,
+    });
+    fireEvent.scroll(transcriptEl);
+    expect(screenRoot).toHaveClass('reading-mode');
+
+    // New text arrives while scrolled up — the pill appears instead of yanking the view.
+    act(() => {
+      useEngineStore.setState({ transcript: ['West of House', 'North of House'] });
+    });
+    fireEvent.click(screen.getByText('↓ New text'));
+    expect(screenRoot).not.toHaveClass('reading-mode');
+  });
+
+  it('does not add reading-mode while pinned at the bottom', () => {
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 1' },
+      transcript: ['West of House'],
+    });
+    const { container } = render(<StoryScreen />);
+    const transcriptEl = container.querySelector('.story-transcript')!;
+    const screenRoot = container.querySelector('.story-screen')!;
+
+    setScrollGeometry(transcriptEl as HTMLElement, {
+      scrollTop: 1950,
+      scrollHeight: 2000,
+      clientHeight: 500,
+    });
+    fireEvent.scroll(transcriptEl);
+    expect(screenRoot).not.toHaveClass('reading-mode');
   });
 });

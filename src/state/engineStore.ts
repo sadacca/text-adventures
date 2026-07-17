@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createEngine } from '../engine/engine.js';
-import { parseVocabulary, type Vocabulary } from '../engine/dictionary.js';
+import { parseVocabulary, isVocabWord, type Vocabulary } from '../engine/dictionary.js';
 import type { RawMessage } from '../engine/protocol-tap.js';
 import type { EngineHandle, GameEvent } from '../engine/types.js';
 import {
@@ -19,15 +19,45 @@ import {
   getTranscript,
   trimTranscriptAfterTurn,
 } from '../storage/transcripts.js';
+import type { TranscriptEntry } from '../storage/db.js';
 import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
+import { normalizeDirection } from '../map/directions.js';
 import { useMapStore } from './mapStore.js';
 import { useDialogStore } from './dialogStore.js';
+import { detectUnknownWord } from '../story/oops.js';
+import { detectDeath } from '../story/death.js';
+import { appendScoreEntry } from '../storage/scoreLog.js';
+import { bumpVerb, getVerbCounts } from '../storage/verbStats.js';
+import { VERBS } from '../story/verbs.js';
+
+/** UX-32: recompute learnedVerbs after this many newly-counted commands, not per
+ *  keystroke/command. */
+const LEARNED_VERBS_REFRESH_INTERVAL = 10;
+/** UX-32: only surface a learned verb once it's been used at least this many times. */
+const LEARNED_VERB_MIN_COUNT = 3;
+/** UX-32: at most this many learned chips render, appended to the built-in row. */
+const LEARNED_VERBS_LIMIT = 3;
+
+const BUILTIN_VERB_COMMANDS = new Set(VERBS.map((v) => v.command));
+
+/** UX-32: top learnedVerbs by count (ties broken alphabetically for determinism). */
+function topLearnedVerbs(counts: Record<string, number>): string[] {
+  return Object.entries(counts)
+    .filter(([, count]) => count >= LEARNED_VERB_MIN_COUNT)
+    .sort(([verbA, countA], [verbB, countB]) => countB - countA || verbA.localeCompare(verbB))
+    .slice(0, LEARNED_VERBS_LIMIT)
+    .map(([verb]) => verb);
+}
 
 /** DebugConsole's live event feed (Task 1.4): capped so a long session can't leak memory. */
 const DEBUG_EVENT_LIMIT = 300;
 
 /** Task 1.8 tap-to-travel outcome, per SPECS.md §3's abort conditions. */
 export type TravelResult = 'completed' | 'blocked' | 'question' | 'char_input';
+
+/** UX-25: how long since `lastPlayedAt` counts as a real away-gap worth recapping,
+ *  rather than e.g. a quick tab switch. */
+const RECAP_GAP_MS = 12 * 60 * 60 * 1000;
 
 /**
  * Bocfel prints its own "[Starting/End of history playback]" scrollback replay as part
@@ -108,6 +138,32 @@ interface EngineState {
    *  failed (corrupt/unsupported file) or no game is open. */
   vocabulary: Vocabulary | null;
 
+  /** UX-25: set by openGame when resuming after a real away-gap (>= RECAP_GAP_MS since
+   *  lastPlayedAt), so StoryScreen can show the recap card. Cleared by dismissal or by
+   *  sending any command. Session-only. */
+  recapEntries: { command: string; response: string }[] | null;
+  dismissRecap: () => void;
+
+  /** UX-27: the word a parser error said it didn't understand (quoted, narrowly
+   *  detected — see story/oops.ts), so CommandBar/TapWords can offer an `oops <word>`
+   *  fix-up. Cleared by any subsequent command. Session-only. */
+  oopsWord: string | null;
+
+  /** UX-28: true when the most recently committed response contained a classic
+   *  death/ending banner (see story/death.ts), so StoryScreen can offer an inline Undo
+   *  shortcut. Cleared by any subsequent command. Session-only. */
+  deathDetected: boolean;
+
+  /** UX-30: bumped by saveCheckpoint() so StoryScreen can show a "⚑ Saved" toast (same
+   *  retrigger-on-repeat pattern as scoreDelta's id counter). Session-only. */
+  checkpointSaved: { id: number } | null;
+
+  /** UX-32: top learned verbs (count >= LEARNED_VERB_MIN_COUNT) for this game, loaded
+   *  once on openGame and refreshed lazily every LEARNED_VERBS_REFRESH_INTERVALth
+   *  counted command — see the module-level counting logic. Session-only (the durable
+   *  data lives in storage/verbStats.ts). */
+  learnedVerbs: string[];
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -121,6 +177,12 @@ interface EngineState {
    *  it — the same teardown-and-reopen path restartPlaythrough uses, just without
    *  wiping the playthrough. No-ops with an alert if there's nothing to step back to. */
   undoLastMove: () => Promise<void>;
+  /** UX-30: snapshots the current state under an auto-generated name via the same
+   *  Quetzal-producing engine.saveAutosave() the per-turn autosave uses (NOT the
+   *  in-game SAVE command, which would round-trip through the game's own prompt) —
+   *  written as a named save, so it survives in More's saves list and restores through
+   *  the existing restoreNamed flow. No-ops if no game is open. */
+  saveCheckpoint: () => Promise<void>;
   /** Task 1.8 tap-to-travel: sends `path`'s moves one at a time, waiting for each
    *  resulting turn to fully settle before sending the next, and aborts immediately if
    *  a response deviates from what the map expects (SPECS.md §3): the room reached
@@ -137,6 +199,9 @@ let recordedRaw: RawMessage[] = [];
 /** UX-11: previous turn's parsed score, so status_line handling can detect an increase. */
 let previousScore: number | null = null;
 let scoreDeltaCounter = 0;
+let checkpointSavedCounter = 0;
+/** UX-32: newly-counted (bumped) commands since the last learnedVerbs refresh. */
+let countedVerbsSinceRefresh = 0;
 
 function teardownActiveSession() {
   activeCleanup?.();
@@ -146,6 +211,7 @@ function teardownActiveSession() {
   activeGameId = null;
   lastKnownTurn = 0;
   previousScore = null;
+  countedVerbsSinceRefresh = 0;
 }
 
 export const useEngineStore = create<EngineState>((set, get) => ({
@@ -164,6 +230,14 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   pinRequestId: 0,
   scoreDelta: null,
   vocabulary: null,
+  recapEntries: null,
+  dismissRecap() {
+    set({ recapEntries: null });
+  },
+  oopsWord: null,
+  deathDetected: false,
+  checkpointSaved: null,
+  learnedVerbs: [],
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -190,6 +264,11 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       debugEvents: [],
       scoreDelta: null,
       vocabulary: null,
+      recapEntries: null,
+      oopsWord: null,
+      deathDetected: false,
+      checkpointSaved: null,
+      learnedVerbs: [],
     });
 
     const game = await getGame(gameId);
@@ -197,8 +276,11 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       set({ loading: false, error: 'Game not found' });
       return;
     }
+    // UX-25: captured before touchLastPlayed (below) overwrites it.
+    const lastPlayedAtBeforeTouch = game.lastPlayedAt;
     set({ gameTitle: game.title });
     set({ vocabulary: parseVocabulary(new Uint8Array(game.bytes)) });
+    void getVerbCounts(gameId).then((counts) => set({ learnedVerbs: topLearnedVerbs(counts) }));
 
     const engine = createEngine();
     activeEngine = engine;
@@ -248,6 +330,35 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       if (event.kind === 'command') {
         pendingCommand = event.text;
         pendingResponseChunks = [];
+        set({ oopsWord: null, deathDetected: false });
+
+        // UX-32: learn verbs from the player's own successful usage — never a direction,
+        // never a built-in chip verb, never a non-vocab typo (when a vocabulary is
+        // loaded at all).
+        const firstWord = event.text.trim().split(/\s+/)[0]?.toLowerCase();
+        const vocab = get().vocabulary;
+        if (
+          firstWord &&
+          firstWord.length >= 3 &&
+          !BUILTIN_VERB_COMMANDS.has(firstWord) &&
+          normalizeDirection(firstWord) === null &&
+          (vocab === null || isVocabWord(firstWord, vocab))
+        ) {
+          countedVerbsSinceRefresh += 1;
+          const dueForPeriodicRefresh = countedVerbsSinceRefresh >= LEARNED_VERBS_REFRESH_INTERVAL;
+          if (dueForPeriodicRefresh) countedVerbsSinceRefresh = 0;
+          void bumpVerb(gameId, firstWord).then((newCount) => {
+            // Refresh immediately the moment a verb first crosses the reveal threshold
+            // (the common case a player actually notices), not just on the periodic
+            // every-Nth-command cadence, which exists to avoid a DB read on every single
+            // command once the list has already settled.
+            if (dueForPeriodicRefresh || newCount === LEARNED_VERB_MIN_COUNT) {
+              void getVerbCounts(gameId).then((counts) =>
+                set({ learnedVerbs: topLearnedVerbs(counts) }),
+              );
+            }
+          });
+        }
         return;
       }
 
@@ -264,7 +375,16 @@ export const useEngineStore = create<EngineState>((set, get) => ({
           const score = Number(scoreMatch[1]);
           if (!resuming && previousScore !== null && score > previousScore) {
             scoreDeltaCounter += 1;
-            set({ scoreDelta: { amount: score - previousScore, id: scoreDeltaCounter } });
+            const amount = score - previousScore;
+            set({ scoreDelta: { amount, id: scoreDeltaCounter } });
+            // UX-29: pendingCommand is still the command that led to this status_line
+            // (input_requested, which clears it, hasn't run yet for this turn).
+            void appendScoreEntry(gameId, {
+              turn: event.turn,
+              amount,
+              command: pendingCommand ?? '',
+              room: event.left,
+            });
           }
           previousScore = score;
         }
@@ -289,6 +409,11 @@ export const useEngineStore = create<EngineState>((set, get) => ({
             });
             pendingCommand = null;
             pendingResponseChunks = [];
+            // UX-27: a char prompt can't accept an `oops` line, so only line requests
+            // are worth detecting against.
+            if (event.type === 'line') {
+              set({ oopsWord: detectUnknownWord(response), deathDetected: detectDeath(response) });
+            }
           }
           if (event.type === 'line') {
             lastKnownTurn = event.turn;
@@ -363,11 +488,27 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     // guarantees start() doesn't resolve early. Rebuild the visible scrollback from our
     // own transcript log (not Bocfel's "history playback", which replays every command
     // it ever saw, autosave noise included).
+    let priorEntries: TranscriptEntry[] = [];
     if (resuming) {
-      const priorEntries = await getTranscript(gameId);
+      priorEntries = await getTranscript(gameId);
       const rendered = priorEntries.map((e) => e.response).filter(Boolean);
       if (rendered.length > 0) set({ transcript: rendered });
       resuming = false;
+    }
+
+    // UX-25: an away-gap recap, assembled from data already fetched above — no extra
+    // reads. Only when there was a real autosave to resume from, the gap was long enough
+    // to be worth recapping, and there's at least one transcript entry to show.
+    if (
+      latestAutosave !== null &&
+      Date.now() - lastPlayedAtBeforeTouch >= RECAP_GAP_MS &&
+      priorEntries.length > 0
+    ) {
+      const recap = priorEntries
+        .slice(-3)
+        .filter((e) => e.command.trim() !== '')
+        .map((e) => ({ command: e.command, response: e.response }));
+      if (recap.length > 0) set({ recapEntries: recap });
     }
 
     await touchLastPlayed(gameId);
@@ -390,12 +531,17 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       recordingFixture: false,
       scoreDelta: null,
       vocabulary: null,
+      recapEntries: null,
+      oopsWord: null,
+      deathDetected: false,
+      checkpointSaved: null,
+      learnedVerbs: [],
     });
   },
 
   sendCommand(text) {
     activeEngine?.sendCommand(text);
-    set((s) => ({ pinRequestId: s.pinRequestId + 1 }));
+    set((s) => ({ pinRequestId: s.pinRequestId + 1, recapEntries: null }));
   },
 
   sendChar(value) {
@@ -433,6 +579,20 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     }
     await trimTranscriptAfterTurn(gameId, previous.turn);
     await get().openGame(gameId);
+  },
+
+  async saveCheckpoint() {
+    const { gameId, status } = get();
+    if (!gameId || !activeEngine) return;
+    const baseName = `Checkpoint — ${status?.left ?? 'Unknown'} — turn ${lastKnownTurn}`;
+    const existingNames = new Set((await listSaves(gameId)).map((s) => s.name));
+    let name = baseName;
+    for (let n = 2; existingNames.has(name); n++) name = `${baseName} (${n})`;
+    const bytes = await activeEngine.saveAutosave();
+    await writeSave(gameId, name, bytes, lastKnownTurn);
+    await get().refreshSaves();
+    checkpointSavedCounter += 1;
+    set({ checkpointSaved: { id: checkpointSavedCounter } });
   },
 
   async travelTo(path) {

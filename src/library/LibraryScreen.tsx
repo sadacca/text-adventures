@@ -10,6 +10,8 @@ import {
   type GameRecord,
 } from '../storage/games';
 import { getLatestAutosave } from '../storage/autosaves';
+import { getMap } from '../storage/maps';
+import { UNKNOWN_ROOM_ID } from '../map/graph';
 
 const ACCEPTED_EXTENSIONS = '.z1,.z2,.z3,.z4,.z5,.z6,.z7,.z8,.dat,.zblorb,.blb,.blorb,.gblorb';
 
@@ -17,9 +19,17 @@ function formatDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/** UX-34: per-game stats shown as a card's second meta line, only once a playthrough
+ *  actually exists (no autosave = never played = no "0 rooms" noise). */
+interface GameStats {
+  turns: number;
+  rooms: number;
+}
+
 export function LibraryScreen() {
   const [games, setGames] = useState<GameRecord[]>([]);
   const [savedGameIds, setSavedGameIds] = useState<Set<string>>(new Set());
+  const [gameStats, setGameStats] = useState<Map<string, GameStats>>(new Map());
   const [uploading, setUploading] = useState(false);
   const setTab = useUiStore((s) => s.setTab);
   const openGame = useEngineStore((s) => s.openGame);
@@ -27,10 +37,23 @@ export function LibraryScreen() {
   const activeGameId = useEngineStore((s) => s.gameId);
 
   async function refreshSavedGameIds(list: GameRecord[]) {
-    const withSaves = await Promise.all(
-      list.map(async (g) => ((await getLatestAutosave(g.gameId)) ? g.gameId : null)),
+    const results = await Promise.all(
+      list.map(async (g) => {
+        const autosave = await getLatestAutosave(g.gameId);
+        if (!autosave) return { gameId: g.gameId, stats: null };
+        const map = await getMap(g.gameId);
+        const rooms = Object.keys(map.rooms).filter((id) => id !== UNKNOWN_ROOM_ID).length;
+        return { gameId: g.gameId, stats: { turns: autosave.turn, rooms } };
+      }),
     );
-    setSavedGameIds(new Set(withSaves.filter((id): id is string => id !== null)));
+    setSavedGameIds(new Set(results.filter((r) => r.stats !== null).map((r) => r.gameId)));
+    setGameStats(
+      new Map(
+        results
+          .filter((r): r is { gameId: string; stats: GameStats } => r.stats !== null)
+          .map((r) => [r.gameId, r.stats]),
+      ),
+    );
   }
 
   async function refresh() {
@@ -157,6 +180,12 @@ export function LibraryScreen() {
               <span className="game-list-meta">
                 {game.format.toUpperCase()} · last played {formatDate(game.lastPlayedAt)}
               </span>
+              {gameStats.has(game.gameId) && (
+                <span className="game-list-meta">
+                  {gameStats.get(game.gameId)!.rooms} rooms explored ·{' '}
+                  {gameStats.get(game.gameId)!.turns} turns
+                </span>
+              )}
             </div>
             <div className="game-list-actions">
               <button

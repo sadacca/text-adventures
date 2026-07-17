@@ -131,14 +131,36 @@
   font-weight: 600;
 }
 
+/* UX-29: tappable to open the score log, but reads as plain status-line text, not a
+ * button — reset the global button chrome. */
 .status-line-score {
   color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font: inherit;
 }
 
 /* UX-22: undo button docked to the status line's right edge. margin-left: auto keeps
  * the existing room/score spacing intact inside the flex row (space-between). */
 .status-line-undo {
   margin-left: auto;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+/* UX-30: checkpoint button, same sizing/class family as .status-line-undo, docked
+ * immediately after it (no margin-left: auto needed — undo's already pushed this pair
+ * to the row's right edge). */
+.status-line-checkpoint {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+/* UX-33: search chip, same sizing/class family as undo and checkpoint — the third and
+ * (per this task's own note) last icon button the status line's right edge holds. */
+.status-line-recall {
   font-size: 1.1em;
   line-height: 1;
 }
@@ -199,6 +221,66 @@
 
 .tap-hint-banner button {
   flex-shrink: 0;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* UX-25: away-gap resume recap — a quiet elevated card, distinct from the tap-hint
+ * banner's action-required tone since this is purely informational. */
+.recap-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+  flex-shrink: 0;
+}
+
+.recap-title {
+  font-weight: 600;
+}
+
+.recap-line {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: var(--space-1);
+}
+
+.recap-card button {
+  margin-top: var(--space-2);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* UX-28: death-aware undo offer — same chrome-banner family as .tap-hint-banner, above
+ * the command bar so it reads as an additive shortcut, not a replacement for the
+ * game's own RESTART/RESTORE/QUIT prompt underneath. */
+.death-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-bottom: var(--space-2);
+}
+
+.death-banner-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.death-banner-actions button {
   padding: 0 12px;
   font-size: 13px;
   font-weight: 600;
@@ -274,6 +356,14 @@
   overflow-x: auto;
   padding: 4px 2px;
   flex-shrink: 0;
+  /* UX-35: reading mode collapses this via max-height/opacity — a generous cap here so
+   * the transition has real distance to animate through without clipping normal content. */
+  max-height: 60px;
+  opacity: 1;
+  transition:
+    max-height 150ms ease,
+    opacity 150ms ease,
+    padding 150ms ease;
 }
 
 .chip {
@@ -296,6 +386,12 @@
   color: var(--text-dim);
 }
 
+/* UX-32: a verb learned from the player's own play — dotted so it's visually distinct
+ * from both a built-in chip and a dashed .chip-suggested. */
+.chip-learned {
+  border-style: dotted;
+}
+
 .exits-row {
   display: flex;
   align-items: center;
@@ -303,6 +399,27 @@
   overflow-x: auto;
   padding: 4px 2px;
   flex-shrink: 0;
+  /* UX-35: see .verb-chips' matching comment — same collapse mechanics. */
+  max-height: 60px;
+  opacity: 1;
+  transition:
+    max-height 150ms ease,
+    opacity 150ms ease,
+    padding 150ms ease;
+}
+
+/* UX-35: reading mode — reclaims vertical space while the player is scrolled up
+ * reading, since the exits row and verb chips are only meaningful at the input point.
+ * The command bar and compass FAB are deliberately NOT collapsed (the FAB is already
+ * unobtrusive and the command bar hosts the return-to-bottom path). Restores the moment
+ * the player re-pins (scroll to bottom, tap the new-text pill, or send a command). */
+.reading-mode .exits-row,
+.reading-mode .verb-chips {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .exits-row-label {
@@ -423,6 +540,14 @@
   padding: 8px 2px;
   max-height: 30vh;
   overflow-y: auto;
+}
+
+/* UX-27: hint shown above the command form when the parser just quoted an unknown
+ * word, so the next tapped word composes an `oops <word>` fix-up. */
+.oops-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 2px var(--space-2);
 }
 
 .command-form {
@@ -900,6 +1025,111 @@
 .room-edit-actions button.btn-danger {
   padding: 0 16px;
   border-radius: 6px;
+}
+
+/* UX-29: score log sheet contents — reuses .room-edit-backdrop/.room-edit-sheet for
+ * the bottom-sheet chrome itself. */
+.score-log-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.score-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.score-log-entry {
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+.score-log-amount {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* UX-31: Go to… travel sheet — reuses .room-edit-backdrop/.room-edit-sheet chrome. */
+.go-to-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.go-to-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+}
+
+.go-to-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* UX-33: transcript recall sheet — reuses .room-edit-backdrop/.room-edit-sheet chrome. */
+.recall-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.recall-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.recall-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.recall-entry {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+.recall-turn {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.recall-line {
+  font-size: 14px;
+}
+
+.recall-context {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
 }
 
 .dialog-options {

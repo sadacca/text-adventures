@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineHandle, GameEvent } from '../src/engine/types';
 import { addOrTouchGame } from '../src/storage/games';
 import { writeAutosaveGeneration } from '../src/storage/autosaves';
+import { appendTranscriptEntry } from '../src/storage/transcripts';
+import { getDb } from '../src/storage/db';
 
 const { createEngine } = vi.hoisted(() => ({ createEngine: vi.fn() }));
 vi.mock('../src/engine/engine.js', () => ({ createEngine }));
@@ -86,5 +88,59 @@ describe('autoResumeLastGame', () => {
     await autoResumeLastGame();
     await autoResumeLastGame();
     expect(createEngine).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('UX-25: away-gap resume recap', () => {
+  async function setLastPlayedAt(gameId: string, timestamp: number) {
+    const db = await getDb();
+    const record = await db.get('games', gameId);
+    if (!record) throw new Error('game not found');
+    await db.put('games', { ...record, lastPlayedAt: timestamp });
+  }
+
+  it('sets recapEntries to the last 3 commands after a real away-gap', async () => {
+    createEngine.mockReturnValue(createFakeEngine());
+    const game = await addOrTouchGame(new Uint8Array([1, 2, 3]), 'fixture.z5');
+    await writeAutosaveGeneration(game.gameId, new Uint8Array([1]), 4);
+    await appendTranscriptEntry(game.gameId, { turn: 1, command: 'n', response: 'North' });
+    await appendTranscriptEntry(game.gameId, { turn: 2, command: 'e', response: 'East' });
+    await appendTranscriptEntry(game.gameId, { turn: 3, command: 's', response: 'South' });
+    await appendTranscriptEntry(game.gameId, { turn: 4, command: 'w', response: 'West' });
+    await setLastPlayedAt(game.gameId, Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+    await useEngineStore.getState().openGame(game.gameId);
+
+    expect(useEngineStore.getState().recapEntries).toEqual([
+      { command: 'e', response: 'East' },
+      { command: 's', response: 'South' },
+      { command: 'w', response: 'West' },
+    ]);
+  });
+
+  it('stays null when lastPlayedAt is recent', async () => {
+    createEngine.mockReturnValue(createFakeEngine());
+    const game = await addOrTouchGame(new Uint8Array([1, 2, 3]), 'fixture.z5');
+    await writeAutosaveGeneration(game.gameId, new Uint8Array([1]), 1);
+    await appendTranscriptEntry(game.gameId, { turn: 1, command: 'n', response: 'North' });
+    await setLastPlayedAt(game.gameId, Date.now() - 5 * 60 * 1000);
+
+    await useEngineStore.getState().openGame(game.gameId);
+
+    expect(useEngineStore.getState().recapEntries).toBeNull();
+  });
+
+  it('sendCommand clears an active recap', async () => {
+    createEngine.mockReturnValue(createFakeEngine());
+    const game = await addOrTouchGame(new Uint8Array([1, 2, 3]), 'fixture.z5');
+    await writeAutosaveGeneration(game.gameId, new Uint8Array([1]), 1);
+    await appendTranscriptEntry(game.gameId, { turn: 1, command: 'n', response: 'North' });
+    await setLastPlayedAt(game.gameId, Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+    await useEngineStore.getState().openGame(game.gameId);
+    expect(useEngineStore.getState().recapEntries).not.toBeNull();
+
+    useEngineStore.getState().sendCommand('look');
+    expect(useEngineStore.getState().recapEntries).toBeNull();
   });
 });

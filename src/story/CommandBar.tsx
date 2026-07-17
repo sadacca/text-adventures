@@ -22,6 +22,7 @@ export function CommandBar() {
   const inputType = useEngineStore((s) => s.inputType);
   const sendCommand = useEngineStore((s) => s.sendCommand);
   const sendChar = useEngineStore((s) => s.sendChar);
+  const oopsWord = useEngineStore((s) => s.oopsWord);
   const draft = useUiStore((s) => s.commandDraft);
   const setDraft = useUiStore((s) => s.setCommandDraft);
   const commandHistory = useUiStore((s) => s.commandHistory);
@@ -123,6 +124,9 @@ export function CommandBar() {
             </button>
           ))}
         </div>
+      )}
+      {oopsWord !== null && draft === '' && (
+        <div className="oops-hint">Didn't know “{oopsWord}” — tap the word you meant</div>
       )}
       <form
         className="command-form"

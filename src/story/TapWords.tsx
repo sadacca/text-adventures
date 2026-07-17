@@ -76,7 +76,16 @@ function renderLineTokens(
             return;
           }
           haptic();
-          appendToDraft(word.toLowerCase());
+          // UX-27: while a parser error's quoted word is pending and the draft is
+          // still empty, the next word tap composes an `oops <word>` fix-up instead of
+          // just the word — the player still reviews and taps Send, nothing auto-sends.
+          const oopsWord = useEngineStore.getState().oopsWord;
+          if (oopsWord !== null && useUiStore.getState().commandDraft === '') {
+            appendToDraft(`oops ${word.toLowerCase()}`);
+            useEngineStore.setState({ oopsWord: null });
+          } else {
+            appendToDraft(word.toLowerCase());
+          }
         }}
       >
         {token}

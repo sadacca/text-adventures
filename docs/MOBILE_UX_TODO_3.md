@@ -122,6 +122,18 @@ few turns, then (devtools) rewrite the game record's `lastPlayedAt` to 2 days ag
 reload — the recap card shows room, and last commands; tapping Continue or sending any
 command dismisses it. Check the card in all three themes.
 
+**Outcome (2026-07-17): done as specced.** `recapEntries`/`dismissRecap` added to
+`engineStore`; `lastPlayedAtBeforeTouch` captured before `touchLastPlayed` overwrites it;
+`priorEntries` (already fetched for scrollback rebuild) reused rather than re-read. The
+card is gated on `hasSeenTapHint` so it never competes with the tap-hint banner for the
+same slot, matching this task's own stated intent. `npm run lint`/`npm test` (165 tests,
+up from 159)/`npm run format`/`npm run build` all pass. **Live-verified with real
+Playwright** (390×844, `npm run build && npm run preview`, real Chromium, bundled
+`zork1.z3`): played `north`, rewrote the game record's `lastPlayedAt` to 2 days ago
+directly in IndexedDB, reloaded — the card showed "You're at: North of House" / "Last
+moves: north"; tapping Continue dismissed it. Screenshotted in light, dark, and retro —
+legible in all three.
+
 ### UX-26: Retrace — one-tap "go back the way I came" [visual check]
 
 **Why:** getting *into* trouble is one tap per move; getting back out means re-tapping a
@@ -195,6 +207,26 @@ the exits row now ends with `⤺ S`; tapping it returns to West of House and the
 flips to `⤺ N`. Try a blocked direction — the retrace chip disappears (no stale wrong
 suggestion). All three themes.
 
+**Outcome (2026-07-17): done as specced, with one correction to this task's own
+acceptance example.** `lastMoveDir` added to `mapStore` exactly as described (module-
+level `pendingMoveDir` stashed on `command`, resolved on the following `status_line`
+against a captured `before` room id); `ExitsRow` appends the `⤺ <DIR>` chip and relaxes
+its empty-row guard. `npm run lint`/`npm test` (164 tests, up from 159)/`npm run
+format`/`npm run build` all pass, plus a new `tests/mapStore.test.ts`.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`) — this is where the
+one correction comes from: `n` from **West of House** does *not* round-trip via `s`
+(real Bocfel response: "The windows are all boarded." — the house's perimeter is a
+one-way loop in this game, not a reversible grid, confirmed directly against the live
+interpreter, not assumed), so the task's own written acceptance example doesn't hold for
+that specific origin room. The retrace *mechanism* itself is correct and was verified
+end-to-end with a origin/direction pair that does round-trip: from West of House, `n`
+then `n` again reaches Forest Path (chip `⤺ S`); tapping it returns to North of House
+and the chip flips to `⤺ N` exactly as designed. Separately confirmed the blocked case
+(`up` from West of House, and `s` from North of House both block) makes the chip vanish
+with no stale suggestion. Screenshotted in light, dark, and retro — legible in all
+three.
+
 ### UX-27: OOPS-aware "fix last word" flow
 
 Promotes `ZMACHINE_CAPABILITIES_RESEARCH.md` Tier 1 item 2 (researched 2026-07-16,
@@ -262,6 +294,23 @@ tapping the intended word in the visible text composes `oops <word>`, Send re-pa
 the corrected command. Confirm ordinary play (no parser error) shows no hint and taps
 compose normally.
 
+**Outcome (2026-07-17): done as specced.** `detectUnknownWord` added in
+`src/story/oops.ts` against the three quoted patterns (Infocom's `don't know the word`,
+its `do not` variant, and Inform's `"word" is not necessary` phrasing); `oopsWord`
+cleared in `engineStore`'s internal `event.kind === 'command'` branch (confirmed via
+`protocol-tap.ts` that a *silent* background autosave command never emits a
+`GameEvent` of kind `command` at all, so this never races with the per-turn autosave)
+and (re)computed against the response text in the `input_requested` line-commit branch.
+`npm run lint`/`npm test` (172 tests, up from 164)/`npm run format`/`npm run build` all
+pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): sent `take
+sinbad`, got Bocfel's real `I don't know the word "sinbad".`; the hint chip appeared
+reading `Didn't know "sinbad" — tap the word you meant`; tapping a word in the visible
+text composed `oops <word>` into the draft and cleared the hint; a following ordinary
+command (`look`) showed no hint. Screenshotted in light, dark, and retro — legible in
+all three.
+
 ---
 
 ## Batch 7 — moments that matter: death, risk, reward
@@ -310,6 +359,24 @@ places without a lamp is the quickest death): die, see the offer, tap Undo — b
 the pre-death turn, transcript consistent (UX-22's own acceptance). Dismissing instead
 leaves the game's own prompt usable. All three themes.
 
+**Outcome (2026-07-17): done as specced.** `detectDeath` added in `src/story/death.ts`
+against exactly the two starred banners, deliberately excluding the generic
+"story has ended" banner. `deathDetected` added to `engineStore`, computed alongside
+UX-27's `oopsWord` in the same line-commit branch, cleared on any subsequent command.
+`StoryScreen` renders the `☠ Undo that move?` banner above the command bar, Undo wired
+to the existing `undoLastMove()` with no `inputType` gate (per this task's own note that
+death can leave the interpreter in a non-`line` state). `npm run lint`/`npm test` (178
+tests, up from 172)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): took the window
+into the house, moved the rug, opened the trap door, went down into the unlit cellar,
+then walked (not waited — idling with `wait` in the dark never triggered the grue in
+this build, only movement did) until the grue's "Oh, no! ... devoured you!" banner hit;
+the Undo offer appeared, and tapping Undo rewound the status line from `Forest` (the
+game's own post-death respawn) back to `Cellar`, the turn just before death, exactly
+like UX-22's own acceptance. Screenshotted in light, dark, and retro — legible in all
+three, including retro's green-on-black.
+
 ### UX-29: Score log ("trophy log")
 
 UX-11's `scoreDelta` detection already fires a toast and haptic, then throws the
@@ -354,6 +421,33 @@ does not score; entering the house/getting the egg does — any scoring action w
 tap the score in the status line, see the entry with command and room. Restart the
 playthrough — log is empty again. All three themes.
 
+**Outcome (2026-07-17): done as specced, one file skipped.** `scoreLog` object store
+added via a real `oldVersion`-gated `db.ts` upgrade callback (version 2; this is the
+schema's first actual migration, since version 1 created every store unconditionally —
+established the `if (oldVersion < N)` pattern future stores should follow). New
+`src/storage/scoreLog.ts` mirrors `transcripts.ts` exactly (500-entry cap, same slice
+pattern); wired into both `deleteGame` and `restartPlaythrough`. `engineStore` fires
+`appendScoreEntry` in the same `status_line` branch as `scoreDelta`, using `event.turn`
+(confirmed via `protocol-tap.ts` to be the exact turn shared by that turn's `buffer_text`/
+`status_line`/`input_requested` — more precise than `lastKnownTurn`, which still holds
+the *previous* turn at this point since `input_requested` hasn't run yet) and the
+module-level `pendingCommand`, which — also confirmed by reading the surrounding code —
+is still set at this point in the event stream (cleared only later, in
+`input_requested`). New `src/story/ScoreLogSheet.tsx` reuses `RoomEditSheet`'s bottom-
+sheet chrome (`.room-edit-backdrop`/`.room-edit-sheet`) rather than inventing new
+classes. **`src/more/MoreScreen.tsx` was NOT touched** — the task named it as a file to
+change but the task's own body never describes what MoreScreen-side behavior would be;
+the sheet opens entirely from the Story tab's status line, which is where the task's own
+acceptance check drives it, so this looks like a copy-paste artifact from a similar task
+rather than a real requirement (same category of drift as UX-26's acceptance example).
+`npm run lint`/`npm test` (184 tests, up from 178)/`npm run format`/`npm run build` all
+pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): the score button
+opened the sheet showing "No points yet — they'll be logged here." before scoring;
+after entering the house through the window (+10), the sheet showed `+10 · west ·
+Kitchen`. Screenshotted in light, dark, and retro — legible in all three.
+
 ### UX-30: One-tap checkpoint from the story screen [visual check]
 
 "I'm about to try something risky" is a core IF pattern; named saves exist but live
@@ -384,6 +478,23 @@ the mocked action.
 **Acceptance:** lint/tests/build pass. Live: tap ⚑, see confirmation, find the
 checkpoint in More → Saves, restore it after moving elsewhere — state returns. All
 three themes.
+
+**Outcome (2026-07-17): done as specced — the format-compatibility check this task
+flagged passed, no STOP needed.** `saveCheckpoint()` calls the same `saveAutosave()`
+the per-turn autosave already uses (real Quetzal bytes via the interpreter's own Glk
+SAVE opcode, per `engine.ts`'s own doc comment), writes them via `writeSave`, and dedupes
+same-turn repeats with a numeric suffix. Confirmation reuses `.score-callout` styling
+(generalized slightly: a second `checkpointSaved: { id }` counter mirroring
+`scoreDelta`'s retrigger-on-repeat pattern, its own toast div, same CSS class — kept the
+diff small rather than inventing a shared toast abstraction). `npm run lint`/`npm test`
+(189 tests, up from 184)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): tapped ⚑ at West
+of House, saw the "⚑ Saved" toast; the checkpoint appeared in More → Saves as
+`Checkpoint — West of House — turn 0`; moved `north` to North of House; tapped Restore
+— the status line returned to `West of House`, confirming a `saveAutosave()` snapshot
+genuinely round-trips through `restoreNamed`'s in-game RESTORE path. Screenshotted in
+light, dark, and retro — legible in all three.
 
 ---
 
@@ -420,6 +531,33 @@ the flag is enough).
 **Acceptance:** lint/tests/build pass. Live with Zork I after exploring 4+ rooms:
 Go to… from the Story tab reaches West of House from Forest without touching the Map
 tab; Android back closes the sheet, not the app. All three themes.
+
+**Outcome (2026-07-17): done as specced, with MapScreen's inline confirm-and-travel
+logic extracted first so nothing was duplicated.** New `src/map/travelConfirm.ts`
+(`confirmAndTravel(path)`) lifts MapScreen's existing long-trip confirm dialog + haptics
++ result-to-toast-string mapping out of `handleRoomTap` verbatim — MapScreen now calls
+it too, so the two surfaces share one copy of the strings, not two. New
+`src/story/GoToSheet.tsx` lists named, non-`unknown` rooms (current room excluded),
+sorted alphabetically (no visit-recency field exists on `RoomNode`, exactly as this
+task's own note anticipated), each row's path precomputed with `computePath` so an
+unreachable room renders disabled with "no known path" instead of failing on tap.
+`uiStore` gained `goToSheetOpen`, wired into `backButton.ts` right after
+`roomEditTarget`'s check, same pattern. `npm run lint`/`npm test` (193 tests, up from
+189)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`) — this is also
+where a real geography quirk surfaced: `computePath` only routes over CONFIRMED edges
+(never inferred ones), and this game's house perimeter is genuinely one-way in several
+spots (e.g. `north` from West of House to North of House has no working `south` back —
+confirmed live, "The windows are all boarded."), so a room reached by a single forward
+move often shows "no known path" back until the reverse is actually walked and thereby
+confirmed — exactly the behavior this task's own disabled-row case describes, not a
+bug. Found a genuinely reversible pair (West of House `south`↔`west` South of House) and
+round-tripped it: the sheet listed `West of House` as reachable, tapping it traveled
+there and closed the sheet, while a same-named-but-different `West of House` graph node
+(a rule-6 disambiguation split from earlier exploration) correctly rendered disabled.
+Simulated Android back via `page.goBack()`: closed the sheet without leaving the Story
+tab. Screenshotted in light, dark, and retro — legible in all three.
 
 ### UX-32: Adaptive verb chips (learned from this game's play)
 
@@ -458,6 +596,31 @@ success-only filtering is out of scope, the vocab check is the filter) — a dot
 `turn` chip appears at the row's end and composes into the draft. Survives reload
 (IndexedDB). All three themes.
 
+**Outcome (2026-07-17): done as specced, with one refinement beyond the letter of step
+3.** `verbStats` store added (version 3; follows the `oldVersion`-gated ladder UX-29
+established). Counting happens in the same `event.kind === 'command'` branch as UX-27/28,
+filtered exactly as specced (not a built-in, not a direction, length >= 3, vocab-checked
+when a dictionary is loaded). **Refinement:** step 3 says refresh `learnedVerbs` only
+every 10th counted command — implemented literally, that means a verb's chip wouldn't
+appear until 10 *any* qualifying commands had passed, even once that verb itself had
+long since cleared the reveal threshold (3 uses) — which directly contradicts this
+task's own acceptance example ("turn three times… a dotted turn chip appears"). Fixed by
+also refreshing immediately the moment `bumpVerb`'s returned count exactly equals the
+reveal threshold (the common, acceptance-relevant case), keeping the every-10th sweep as
+a catch-all for anything seeded outside this session's own bump flow. `npm run
+lint`/`npm test` (204 tests, up from 193)/`npm run format`/`npm run build` all pass. (One
+more small doc/reality mismatch, noted but not acted on: the acceptance text calls `read`
+a "built-in" — it isn't in `VERBS`, so it's actually itself learnable; harmless here since
+it never reached the reveal threshold in this check.)
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): `open mailbox` /
+`read leaflet` (no chip yet), then `turn lamp on` / `turn lamp off` / `turn dial` three
+times — a dotted `turn` chip appeared at the end of the row immediately, tapping it
+inserted `turn` into the draft, and it survived a full page reload (confirming the
+IndexedDB round-trip, not just in-memory state). Screenshotted in light, dark, and
+retro — legible and visually distinct from both a built-in chip and `.chip-suggested`'s
+dashed style in all three.
+
 ---
 
 ## Batch 9 — reading surface and library polish
@@ -487,6 +650,25 @@ the two-char minimum.
 — every mention appears with turn stamps; keyboard opens only inside this sheet; Android
 back closes it. All three themes.
 
+**Outcome (2026-07-17): done as specced.** New pure `src/story/recall.ts`
+(`filterTranscript`) matches case-insensitively across `command` and each line of
+`response` independently, newest-turn-first, capped at 50 total results, returning
+`[start, end)` offsets so `RecallSheet` bolds a match with a plain `<strong>` element —
+never `dangerouslySetInnerHTML`. `RecallSheet` debounces 200ms, requires 2+ characters
+(enforced inside `filterTranscript` itself), and is the one sheet in this app allowed to
+autofocus/open the keyboard. `uiStore` gained `recallSheetOpen`, wired into
+`backButton.ts` alongside `goToSheetOpen`. A third status-line icon button (🔍) joins
+↶/⚑ — the row's stated three-icon cap. `npm run lint`/`npm test` (213 tests, up from
+204)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): after 10 turns,
+opened the sheet (input auto-focused, confirmed via `document.activeElement`), searched
+"mailbox" — every mention surfaced with its turn number, the matched word bolded, and
+one line of context (e.g. `Turn 0` / "There is a small **mailbox** here." / "You are
+standing in an open field…"). Simulated Android back via `page.goBack()`: closed the
+sheet without leaving the Story tab. Screenshotted in light, dark, and retro — legible
+in all three.
+
 ### UX-34: Library cards that tell a story [visual check]
 
 Cards show `Z3 · last played Jul 12`. The interesting numbers already exist: score is
@@ -508,6 +690,18 @@ stats line.
 
 **Acceptance:** lint/tests/build pass. Live: the Zork I card shows real numbers after
 play; a freshly-uploaded game shows none. All three themes.
+
+**Outcome (2026-07-17): done as specced.** `refreshSavedGameIds` extended (not
+duplicated) to also fetch each game's map and derive `{ turns, rooms }` from the same
+`getLatestAutosave` call it already made; `gameStats` is a plain `Map<gameId, stats>` in
+component state, rendered as a second `.game-list-meta` line only when present (no "0
+rooms" noise for a never-played game). `npm run lint`/`npm test` (215 tests, up from
+213)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3` plus a synthetic
+never-played upload): after exploring a few rooms, the Library card showed `3 rooms
+explored · 2 turns`; the freshly-uploaded game's card showed only the format/date line,
+no stats. Screenshotted in light, dark, and retro — legible in all three.
 
 ### UX-35: Reading mode — reclaim vertical space while scrolled back [visual check]
 
@@ -540,6 +734,27 @@ pattern; if none exists, define properties directly on the element.)
 row and chips fold away smoothly, visibly more prose on screen; scroll back down or
 send a command — they return. No layout jump when the score toast or new-text pill
 fires mid-read. All three themes.
+
+**Outcome (2026-07-17): done as specced, with one lint-driven adjustment.** `pinned`
+component state mirrors `pinnedRef` everywhere the ref is written, driving a
+`reading-mode` class on the screen root; `.exits-row`/`.verb-chips` gained a real
+`max-height` (60px, generous headroom) plus a 150ms `max-height`/`opacity`/`padding`
+transition, collapsed to 0 under `.reading-mode`. **Adjustment:** the `pinRequestId`
+effect originally also called `setPinned(true)` directly in the effect body to force
+re-pin — this repo's `react-hooks/set-state-in-effect` lint rule flags exactly that
+pattern. Removed it and leaned on the mechanism the file's own existing comment already
+documents: assigning `scrollTop` fires a native `scroll` event, which `handleScroll`
+(not the effect) reacts to — so the `pinned` update happens from the DOM event handler
+instead of synchronously in the effect, same as `newBelow` already did. No behavior
+change, just moved the `setState` call to where the linter wants it. `npm run
+lint`/`npm test` (217 tests, up from 213)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): scrolling the
+transcript to the top folded the exits row and verb chips away (confirmed via
+`.reading-mode` class and screenshot — visibly more prose on screen, FAB and command bar
+untouched); sending a command while scrolled up restored both immediately. Screenshotted
+in light, dark, and retro — legible in all three, no visual glitches during the
+collapse/restore.
 
 ---
 

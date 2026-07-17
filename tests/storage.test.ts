@@ -14,6 +14,8 @@ import {
 } from '../src/storage/transcripts';
 import { deleteMap, getMap, saveMap } from '../src/storage/maps';
 import { createEmptyGraph } from '../src/map/graph';
+import { appendScoreEntry, getScoreLog } from '../src/storage/scoreLog';
+import { bumpVerb, getVerbCounts } from '../src/storage/verbStats';
 
 function bytes(seed: number, length = 32): Uint8Array {
   const arr = new Uint8Array(length);
@@ -56,10 +58,19 @@ describe('games store', () => {
     const game = await addOrTouchGame(data, 'zork.z3');
     await writeAutosaveGeneration(game.gameId, bytes(1), 1);
     await writeSave(game.gameId, 'my save', bytes(2), 1);
+    await appendScoreEntry(game.gameId, {
+      turn: 1,
+      amount: 5,
+      command: 'take egg',
+      room: 'Forest',
+    });
+    await bumpVerb(game.gameId, 'unlock');
     await deleteGame(game.gameId);
     expect(await getGame(game.gameId)).toBeUndefined();
     expect(await getLatestAutosave(game.gameId)).toBeNull();
     expect(await listSaves(game.gameId)).toHaveLength(0);
+    expect(await getScoreLog(game.gameId)).toHaveLength(0);
+    expect(await getVerbCounts(game.gameId)).toEqual({});
   });
 });
 
@@ -151,6 +162,63 @@ describe('transcripts', () => {
     expect(entries).toHaveLength(2000);
     expect(entries[0].turn).toBe(2);
     expect(entries[entries.length - 1].turn).toBe(2001);
+  });
+});
+
+describe('UX-29: scoreLog', () => {
+  it('returns an empty log for a game with no scoreLog record', async () => {
+    expect(await getScoreLog('never-scored')).toEqual([]);
+  });
+
+  it('round-trips entries in insertion order', async () => {
+    const gameId = 'game-score-roundtrip';
+    await appendScoreEntry(gameId, { turn: 5, amount: 5, command: 'take egg', room: 'Forest' });
+    await appendScoreEntry(gameId, {
+      turn: 12,
+      amount: 10,
+      command: 'open case',
+      room: 'Living Room',
+    });
+    expect(await getScoreLog(gameId)).toEqual([
+      { turn: 5, amount: 5, command: 'take egg', room: 'Forest' },
+      { turn: 12, amount: 10, command: 'open case', room: 'Living Room' },
+    ]);
+  });
+
+  it('caps the log at 500 entries', async () => {
+    const gameId = 'game-score-cap';
+    const { getDb } = await import('../src/storage/db');
+    const db = await getDb();
+    const seeded = Array.from({ length: 499 }, (_, i) => ({
+      turn: i + 1,
+      amount: 1,
+      command: 'x',
+      room: 'Room',
+    }));
+    await db.put('scoreLog', { gameId, entries: seeded });
+
+    await appendScoreEntry(gameId, { turn: 500, amount: 1, command: 'x', room: 'Room' });
+    expect(await getScoreLog(gameId)).toHaveLength(500);
+
+    await appendScoreEntry(gameId, { turn: 501, amount: 1, command: 'x', room: 'Room' });
+    const entries = await getScoreLog(gameId);
+    expect(entries).toHaveLength(500);
+    expect(entries[0].turn).toBe(2);
+    expect(entries[entries.length - 1].turn).toBe(501);
+  });
+});
+
+describe('UX-32: verbStats', () => {
+  it('returns an empty record for a game with no verbStats row', async () => {
+    expect(await getVerbCounts('never-played-a-verb')).toEqual({});
+  });
+
+  it('bumpVerb increments per-verb counts and returns the new count, round-tripping through getVerbCounts', async () => {
+    const gameId = 'game-verb-roundtrip';
+    expect(await bumpVerb(gameId, 'unlock')).toBe(1);
+    expect(await bumpVerb(gameId, 'unlock')).toBe(2);
+    expect(await bumpVerb(gameId, 'push')).toBe(1);
+    expect(await getVerbCounts(gameId)).toEqual({ unlock: 2, push: 1 });
   });
 });
 

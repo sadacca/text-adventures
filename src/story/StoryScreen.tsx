@@ -6,6 +6,9 @@ import { CompassRose } from './CompassRose';
 import { ExitsRow } from './ExitsRow';
 import { VerbChips } from './VerbChips';
 import { TapWords } from './TapWords';
+import { ScoreLogSheet } from './ScoreLogSheet';
+import { GoToSheet } from './GoToSheet';
+import { RecallSheet } from './RecallSheet';
 import { DebugConsole } from '../debug/DebugConsole';
 import { haptic } from '../haptics';
 
@@ -24,13 +27,28 @@ export function StoryScreen() {
   const pinRequestId = useEngineStore((s) => s.pinRequestId);
   const scoreDelta = useEngineStore((s) => s.scoreDelta);
   const undoLastMove = useEngineStore((s) => s.undoLastMove);
+  const recapEntries = useEngineStore((s) => s.recapEntries);
+  const dismissRecap = useEngineStore((s) => s.dismissRecap);
+  const deathDetected = useEngineStore((s) => s.deathDetected);
+  const checkpointSaved = useEngineStore((s) => s.checkpointSaved);
+  const saveCheckpoint = useEngineStore((s) => s.saveCheckpoint);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
   const hasSeenTapHint = useUiStore((s) => s.hasSeenTapHint);
   const dismissTapHint = useUiStore((s) => s.dismissTapHint);
+  const goToSheetOpen = useUiStore((s) => s.goToSheetOpen);
+  const setGoToSheetOpen = useUiStore((s) => s.setGoToSheetOpen);
+  const recallSheetOpen = useUiStore((s) => s.recallSheetOpen);
+  const setRecallSheetOpen = useUiStore((s) => s.setRecallSheetOpen);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // UX-35: `pinnedRef` stays for the scroll handler's synchronous reads (a React state
+  // update wouldn't be visible to the very next scroll event in the same tick); `pinned`
+  // state mirrors it so JSX can react to it (the reading-mode class below). Every write
+  // sets both together.
   const pinnedRef = useRef(true);
+  const [pinned, setPinned] = useState(true);
   const [newBelow, setNewBelow] = useState(false);
+  const [scoreLogOpen, setScoreLogOpen] = useState(false);
 
   // UX-11: show a score-increase callout, then auto-dismiss. Keyed on the whole
   // scoreDelta object, so a new delta (even an equal amount) cancels any pending dismiss
@@ -52,6 +70,15 @@ export function StoryScreen() {
     }, SCORE_TOAST_MS);
     return () => clearTimeout(timer);
   }, [scoreDelta]);
+
+  // UX-30: same retrigger-on-repeat/auto-dismiss pattern as the score toast above.
+  useEffect(() => {
+    if (!checkpointSaved) return;
+    const timer = setTimeout(() => {
+      useEngineStore.setState({ checkpointSaved: null });
+    }, SCORE_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [checkpointSaved]);
 
   // Smart scroll pinning: only auto-scroll to the newest text when the player was
   // already at (or near) the bottom. Otherwise they're reading back, so surface a pill
@@ -75,6 +102,9 @@ export function StoryScreen() {
   useEffect(() => {
     if (pinRequestId === 0) return;
     pinnedRef.current = true;
+    // Setting scrollTop fires a native 'scroll' event, which handleScroll below reacts
+    // to (clearing newBelow and — UX-35 — updating `pinned` state); no direct setState
+    // call belongs in this effect body.
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [pinRequestId]);
@@ -84,6 +114,7 @@ export function StoryScreen() {
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD;
     pinnedRef.current = nearBottom;
+    setPinned(nearBottom);
     if (nearBottom) setNewBelow(false);
   }
 
@@ -91,6 +122,7 @@ export function StoryScreen() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
     pinnedRef.current = true;
+    setPinned(true);
     setNewBelow(false);
   }
 
@@ -109,7 +141,7 @@ export function StoryScreen() {
   }
 
   return (
-    <div className="screen story-screen">
+    <div className={`screen story-screen${pinned ? '' : ' reading-mode'}`}>
       {error && (
         <p className="error-text" role="alert">
           {error}
@@ -119,7 +151,17 @@ export function StoryScreen() {
       {status && (
         <div className="status-line">
           <span className="status-line-room">{status.left}</span>
-          <span className="status-line-score">{status.right}</span>
+          <button
+            type="button"
+            className="status-line-score"
+            aria-label="Score log"
+            onClick={() => {
+              haptic();
+              setScoreLogOpen(true);
+            }}
+          >
+            {status.right}
+          </button>
           <button
             type="button"
             className="status-line-undo tap-target"
@@ -131,6 +173,28 @@ export function StoryScreen() {
           >
             ↶
           </button>
+          <button
+            type="button"
+            className="status-line-checkpoint tap-target"
+            aria-label="Save checkpoint"
+            onClick={() => {
+              haptic();
+              void saveCheckpoint();
+            }}
+          >
+            ⚑
+          </button>
+          <button
+            type="button"
+            className="status-line-recall tap-target"
+            aria-label="Search this story"
+            onClick={() => {
+              haptic();
+              setRecallSheetOpen(true);
+            }}
+          >
+            🔍
+          </button>
         </div>
       )}
       {scoreDelta && (
@@ -138,11 +202,28 @@ export function StoryScreen() {
           +{scoreDelta.amount}
         </div>
       )}
+      {checkpointSaved && (
+        <div key={checkpointSaved.id} className="score-callout" aria-live="polite">
+          ⚑ Saved
+        </div>
+      )}
       {!hasSeenTapHint && (
         <div className="tap-hint-banner">
           <span>Tap a word to add it to your command · hold a word to examine it</span>
           <button type="button" className="tap-target" onClick={dismissTapHint}>
             Got it
+          </button>
+        </div>
+      )}
+      {hasSeenTapHint && recapEntries && (
+        <div className="recap-card">
+          <div className="recap-title">While you were away…</div>
+          {status && <div className="recap-line">You're at: {status.left}</div>}
+          <div className="recap-line">
+            Last moves: {recapEntries.map((e) => e.command).join(' · ')}
+          </div>
+          <button type="button" className="tap-target" onClick={dismissRecap}>
+            Continue
           </button>
         </div>
       )}
@@ -161,8 +242,36 @@ export function StoryScreen() {
       </div>
       <CompassRose />
       <VerbChips />
+      {deathDetected && (
+        <div className="death-banner">
+          <span>☠ Undo that move?</span>
+          <div className="death-banner-actions">
+            <button
+              type="button"
+              className="tap-target"
+              onClick={() => {
+                haptic();
+                void undoLastMove();
+              }}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              className="tap-target"
+              aria-label="Dismiss"
+              onClick={() => useEngineStore.setState({ deathDetected: false })}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
       <CommandBar />
       {debugConsoleEnabled && <DebugConsole />}
+      {scoreLogOpen && <ScoreLogSheet gameId={gameId} onClose={() => setScoreLogOpen(false)} />}
+      {goToSheetOpen && <GoToSheet onClose={() => setGoToSheetOpen(false)} />}
+      {recallSheetOpen && <RecallSheet gameId={gameId} onClose={() => setRecallSheetOpen(false)} />}
     </div>
   );
 }

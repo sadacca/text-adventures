@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EngineHandle, GameEvent } from '../src/engine/types';
 import { addOrTouchGame } from '../src/storage/games';
+import { getScoreLog } from '../src/storage/scoreLog';
 
 const { createEngine } = vi.hoisted(() => ({ createEngine: vi.fn() }));
 vi.mock('../src/engine/engine.js', () => ({ createEngine }));
@@ -100,5 +101,25 @@ describe('engineStore scoreDelta', () => {
     const emitB = await setUpGame('Loading…');
     emitB({ kind: 'status_line', left: 'Room A', right: 'Score: 5  Moves: 1', raw: [], turn: 1 });
     expect(useEngineStore.getState().scoreDelta).toBeNull();
+  });
+
+  it('UX-29: persists a score log entry alongside the toast', async () => {
+    const emit = await setUpGame();
+    const gameId = useEngineStore.getState().gameId!;
+
+    emit({ kind: 'command', text: 'take egg', turn: 1 });
+    emit({
+      kind: 'status_line',
+      left: 'Forest',
+      right: 'Score: 5  Moves: 1',
+      raw: [],
+      turn: 1,
+    });
+
+    await vi.waitFor(async () => {
+      expect(await getScoreLog(gameId)).toEqual([
+        { turn: 1, amount: 5, command: 'take egg', room: 'Forest' },
+      ]);
+    });
   });
 });
