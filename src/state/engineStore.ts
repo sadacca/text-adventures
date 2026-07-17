@@ -21,8 +21,10 @@ import {
 } from '../storage/transcripts.js';
 import type { TranscriptEntry } from '../storage/db.js';
 import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
+import { probeUnexploredDirections } from '../map/prospect.js';
 import { normalizeDirection } from '../map/directions.js';
 import { useMapStore } from './mapStore.js';
+import { useUiStore } from './uiStore.js';
 import { useDialogStore } from './dialogStore.js';
 import { detectUnknownWord } from '../story/oops.js';
 import { detectDeath } from '../story/death.js';
@@ -118,8 +120,21 @@ interface EngineState {
 
   /** Task 1.8: true while tap-to-travel is driving the engine turn-by-turn — gates the
    *  rest of the input UI (compass/chips/command bar) so the player can't stack a
-   *  manual command mid-trip. */
+   *  manual command mid-trip. Prospective mapping (probeExits) also raises this for
+   *  the duration of a probe burst, for the same reason: a player command interleaved
+   *  between a probe move and its /undo would run in a room the player isn't "really"
+   *  in, then get rewound. */
   traveling: boolean;
+
+  /** 2026-07-17, prospective mapping: true while probeExits is quietly scouting the
+   *  current room (move + /undo per unexplored direction). Probe turns are kept out of
+   *  the transcript, autosaves, and score tracking — see the probing checks in the
+   *  event handler. */
+  probing: boolean;
+  /** Probes the current room's unexplored compass directions (see map/prospect.ts).
+   *  No-ops unless idle at a line prompt. Triggered automatically after each settled
+   *  turn while the prospectiveMapping setting is on. */
+  probeExits: () => Promise<void>;
 
   /** Bumped on every player-initiated command (sendCommand/travelTo) so StoryScreen can
    *  force the transcript back to pinned-at-bottom even if the player had scrolled up to
@@ -202,6 +217,10 @@ let scoreDeltaCounter = 0;
 let checkpointSavedCounter = 0;
 /** UX-32: newly-counted (bumped) commands since the last learnedVerbs refresh. */
 let countedVerbsSinceRefresh = 0;
+/** Prospective mapping: module-level twin of the `probing` state, readable inside the
+ *  engine event handler without a store round-trip. While true, events still feed the
+ *  automapper (that's the whole point) but never the transcript/autosave/score paths. */
+let probeActive = false;
 
 function teardownActiveSession() {
   activeCleanup?.();
@@ -212,6 +231,7 @@ function teardownActiveSession() {
   lastKnownTurn = 0;
   previousScore = null;
   countedVerbsSinceRefresh = 0;
+  probeActive = false;
 }
 
 export const useEngineStore = create<EngineState>((set, get) => ({
@@ -269,6 +289,8 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       deathDetected: false,
       checkpointSaved: null,
       learnedVerbs: [],
+      traveling: false,
+      probing: false,
     });
 
     const game = await getGame(gameId);
@@ -326,6 +348,16 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       // hops). The per-turn silent autosave's own save/restore round-trip is harmless to
       // skip too — it never actually moves the player.
       if (!isSilent) useMapStore.getState().handleEvent(event);
+
+      // Prospective mapping: a probe turn feeds the automapper (above) and nothing
+      // else — its prose, status flicker, score changes, and autosaves must never
+      // reach the player or storage, because the closing /undo restores the exact
+      // pre-probe world state. Only input_requested's TYPE passes through, so an
+      // unexpected char prompt (which aborts the probe loop) is reflected in the UI.
+      if (probeActive) {
+        if (event.kind === 'input_requested') set({ inputType: event.type });
+        return;
+      }
 
       if (event.kind === 'command') {
         pendingCommand = event.text;
@@ -423,6 +455,13 @@ export const useEngineStore = create<EngineState>((set, get) => ({
                 .saveAutosave()
                 .then((bytes) => writeAutosaveGeneration(gameId, bytes, event.turn))
                 .catch((err: unknown) => console.error('autosave failed', err));
+            }
+            // Prospective mapping: the player's turn has fully settled — quietly scout
+            // the current room's unexplored directions. queueMicrotask escapes the
+            // event dispatch we're inside of; probeExits itself no-ops when there's
+            // nothing left to learn here, so this is free on revisits.
+            if (useUiStore.getState().prospectiveMapping && !get().traveling) {
+              queueMicrotask(() => void get().probeExits());
             }
           }
         }
@@ -536,6 +575,8 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       deathDetected: false,
       checkpointSaved: null,
       learnedVerbs: [],
+      traveling: false,
+      probing: false,
     });
   },
 
@@ -595,6 +636,29 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     set({ checkpointSaved: { id: checkpointSavedCounter } });
   },
 
+  probing: false,
+
+  async probeExits() {
+    const engine = activeEngine;
+    if (!engine || probeActive) return;
+    if (get().traveling || get().inputType !== 'line' || !get().gameId) return;
+    // Probe commands churn mapStore's lastMoveDir (UX-26) as they flow through the
+    // automapper; snapshot the player's own last move and restore it after.
+    const savedLastMoveDir = useMapStore.getState().lastMoveDir;
+    probeActive = true;
+    set({ probing: true, traveling: true });
+    try {
+      await probeUnexploredDirections(
+        { sendCommand: (text) => engine.sendCommand(text), on: (l) => engine.on(l) },
+        () => useMapStore.getState().graph,
+      );
+    } finally {
+      probeActive = false;
+      set({ probing: false, traveling: false });
+      useMapStore.setState({ lastMoveDir: savedLastMoveDir });
+    }
+  },
+
   async travelTo(path) {
     if (!activeEngine || path.length === 0) return 'completed';
     const engine = activeEngine;
@@ -625,6 +689,11 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       return 'completed';
     } finally {
       set({ traveling: false });
+      // Travel steps suppress the per-turn probe trigger (traveling gate), so scout
+      // the destination once the trip is over.
+      if (useUiStore.getState().prospectiveMapping) {
+        queueMicrotask(() => void get().probeExits());
+      }
     }
   },
 }));

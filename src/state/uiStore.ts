@@ -14,6 +14,11 @@ export interface UiState {
   storyFont: 'system' | 'serif' | 'mono';
   /** UX-19: bold words the game's parser dictionary actually understands. Default on. */
   highlightVocab: boolean;
+  /** 2026-07-17, prospective mapping: after each settled turn, quietly probe the
+   *  current room's unexplored compass directions (move, then Bocfel "/undo") so the
+   *  map and compass fill in without spending real moves. Default off — it multiplies
+   *  interpreter turns and some players consider auto-scouting a spoiler. */
+  prospectiveMapping: boolean;
   /** Task 1.4: settings toggle that shows/hides DebugConsole in the Story tab. */
   debugConsoleEnabled: boolean;
   /** Task 1.7: recent sent commands, newest first, for the history popover and "again". */
@@ -42,6 +47,7 @@ export interface UiState {
   setFontScale: (scale: number) => void;
   setStoryFont: (font: UiState['storyFont']) => void;
   setHighlightVocab: (enabled: boolean) => void;
+  setProspectiveMapping: (enabled: boolean) => void;
   setDebugConsoleEnabled: (enabled: boolean) => void;
   pushCommandHistory: (text: string) => void;
   setRoomEditTarget: (id: string | null) => void;
@@ -60,7 +66,10 @@ export interface UiState {
  */
 const persistOptions: PersistOptions<
   UiState,
-  Pick<UiState, 'theme' | 'fontScale' | 'storyFont' | 'highlightVocab' | 'hasSeenTapHint'>
+  Pick<
+    UiState,
+    'theme' | 'fontScale' | 'storyFont' | 'highlightVocab' | 'prospectiveMapping' | 'hasSeenTapHint'
+  >
 > = {
   name: 'text-adventures-settings',
   version: 1,
@@ -69,6 +78,7 @@ const persistOptions: PersistOptions<
     fontScale: s.fontScale,
     storyFont: s.storyFont,
     highlightVocab: s.highlightVocab,
+    prospectiveMapping: s.prospectiveMapping,
     hasSeenTapHint: s.hasSeenTapHint,
   }),
 };
@@ -82,6 +92,7 @@ export const useUiStore = create<UiState>()(
       fontScale: 1,
       storyFont: 'system',
       highlightVocab: true,
+      prospectiveMapping: false,
       debugConsoleEnabled: false,
       commandHistory: [],
       hasSeenTapHint: false,
@@ -97,6 +108,7 @@ export const useUiStore = create<UiState>()(
       setFontScale: (fontScale) => set({ fontScale }),
       setStoryFont: (storyFont) => set({ storyFont }),
       setHighlightVocab: (highlightVocab) => set({ highlightVocab }),
+      setProspectiveMapping: (prospectiveMapping) => set({ prospectiveMapping }),
       setDebugConsoleEnabled: (debugConsoleEnabled) => set({ debugConsoleEnabled }),
       pushCommandHistory: (text) =>
         set((s) => ({

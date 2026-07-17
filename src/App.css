@@ -853,6 +853,12 @@
   stroke-width: 3px;
 }
 
+/* Direction-confirmation arrowhead: drawn only when travel between two rooms is
+   confirmed in exactly one direction, pointing the way that's been walked. */
+.map-edge-arrow {
+  fill: var(--text-dim);
+}
+
 .map-room rect {
   fill: var(--bg-elevated);
   stroke: var(--border);

@@ -128,6 +128,41 @@ a time with a floor switcher, rendering cross-floor `up`/`down` edges as tappabl
 rather than lines to an undrawn room. See §5's component inventory note and
 `docs/MOBILE_UX_TODO_2.md`'s UX-20/UX-21 entries for the full design.
 
+**2026-07-17 addition (undo awareness, direction confirmation, prospective mapping):**
+
+- *Undo turns.* `undo` and Bocfel's interpreter-level `/undo` meta-command (which works
+  even for v3 games with no in-game UNDO) get their own pending kind in the Automapper:
+  an undo REWINDS the world rather than moving through it, so it must never mint an
+  edge (previously it recorded a junk rule-4 custom edge labeled the command text).
+  Resolution: if the last turn changed rooms and the departed node's name matches the
+  new status line, return to that exact node (`lastDepartedRoomId` — the only correct
+  answer when the rewound move was between two same-named siblings, where the status
+  line is identical and no arrival title prints); if the status line is unchanged, the
+  undone turn wasn't a room change — stay put; otherwise fall back to normal name
+  resolution, still edge-free.
+- *Stale blockages.* A successful traversal now REMOVES that direction from the
+  origin's `blockedDirections` — the obstacle was state, not geography (a window
+  opened, a trap door lifted), and keeping both records would leave a permanently
+  self-contradictory rule-6 fingerprint. Blocked-after-confirmed still splits per
+  `findCompatibleSiblingOrSplit`; this is the reverse order only.
+- *Direction confirmation on the map.* `MapScreen.buildSegments` marks any room pair
+  whose travel is confirmed in exactly ONE direction (the other merely inferred, or
+  absent — one-way passages, untested return trips) with an arrowhead pointing the
+  proven way, at 65% along the line. Confirmed-both-ways renders as a plain line;
+  neither-confirmed stays dashed. See `.map-edge-arrow`.
+- *Prospective mapping* (`src/map/prospect.ts`, `engineStore.probeExits`, persisted
+  `uiStore.prospectiveMapping` toggle in MoreScreen, default OFF): with the setting on,
+  after each settled player turn the app quietly probes every still-unexplored compass
+  direction of the current room (no live or tombstoned edge, not known-blocked; `in`/
+  `out` excluded as too context-dependent): send the move, let the automapper record
+  the outcome (confirmed edge + destination room, or a `blockedDirections` entry), then
+  rewind with `/undo`. Each room therefore converges in one pass — later visits probe
+  nothing. Probe turns feed ONLY the automapper: the engineStore suppresses their
+  transcript/autosave/score/status side effects (`probeActive`), gates input via
+  `traveling` for the burst, and restores `lastMoveDir` after. The loop aborts the
+  moment anything unexpected happens (char prompt, quit, an /undo that doesn't return
+  to the origin). Live-tested against Zork 1 in `tests/zork-prospect.test.ts`.
+
 **2026-07-17 addition (map stability + label legibility):** `computeLayout` is now
 incremental: a room placed once (`RoomNode.posAssigned`, or `posLocked` from a user
 drag) keeps its position on every later run; only never-placed rooms are positioned,

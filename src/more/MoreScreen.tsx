@@ -48,6 +48,8 @@ export function MoreScreen() {
   const setStoryFont = useUiStore((s) => s.setStoryFont);
   const highlightVocab = useUiStore((s) => s.highlightVocab);
   const setHighlightVocab = useUiStore((s) => s.setHighlightVocab);
+  const prospectiveMapping = useUiStore((s) => s.prospectiveMapping);
+  const setProspectiveMapping = useUiStore((s) => s.setProspectiveMapping);
   const installPromptEvent = useInstallStore((s) => s.promptEvent);
   const installed = useInstallStore((s) => s.installed);
   const markInstalled = useInstallStore((s) => s.markInstalled);
@@ -162,6 +164,20 @@ export function MoreScreen() {
             type="checkbox"
             checked={highlightVocab}
             onChange={(e) => setHighlightVocab(e.target.checked)}
+          />
+        </label>
+        <label className="settings-row">
+          <span className="settings-row-label">
+            Prospective mapping
+            <span className="settings-row-hint">
+              After each move, quietly test unexplored directions (and undo them) so the map and
+              compass fill in ahead of you. Costs no turns, but scouts rooms you haven't entered.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={prospectiveMapping}
+            onChange={(e) => setProspectiveMapping(e.target.checked)}
           />
         </label>
         <label className="settings-row">

@@ -95,3 +95,28 @@ describe('MapScreen: Batch 4 / UX-21 floor switcher', () => {
     expect(screen.getByText('Loft')).toBeInTheDocument();
   });
 });
+
+describe('MapScreen: direction-confirmation arrows', () => {
+  it('draws an arrowhead when travel is confirmed in exactly one direction', () => {
+    setUpMap(1); // landing -n-> hall confirmed, hall -s-> landing confirmed: two-way
+    const { container } = render(<MapScreen />);
+    expect(container.querySelectorAll('.map-edge-arrow')).toHaveLength(0);
+  });
+
+  it('marks a one-way pair (confirmed out, only inferred back) with an arrow', () => {
+    setUpMap(1);
+    useMapStore.setState((s) => {
+      const graph = { ...s.graph, edges: [...s.graph.edges] };
+      // Chimney-style passage: down into the vault is confirmed; the way back is only
+      // the automapper's guess (inferred), so the pair renders with an arrowhead.
+      graph.rooms.vault = mkRoom('vault', 'Vault', { x: 1, y: 1 }, 0);
+      graph.edges.push(
+        { from: 'landing', to: 'vault', dir: 'se', status: 'confirmed' },
+        { from: 'vault', to: 'landing', dir: 'nw', status: 'inferred' },
+      );
+      return { graph };
+    });
+    const { container } = render(<MapScreen />);
+    expect(container.querySelectorAll('.map-edge-arrow')).toHaveLength(1);
+  });
+});
