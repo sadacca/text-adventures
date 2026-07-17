@@ -41,7 +41,12 @@ export function StoryScreen() {
   const setRecallSheetOpen = useUiStore((s) => s.setRecallSheetOpen);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // UX-35: `pinnedRef` stays for the scroll handler's synchronous reads (a React state
+  // update wouldn't be visible to the very next scroll event in the same tick); `pinned`
+  // state mirrors it so JSX can react to it (the reading-mode class below). Every write
+  // sets both together.
   const pinnedRef = useRef(true);
+  const [pinned, setPinned] = useState(true);
   const [newBelow, setNewBelow] = useState(false);
   const [scoreLogOpen, setScoreLogOpen] = useState(false);
 
@@ -97,6 +102,9 @@ export function StoryScreen() {
   useEffect(() => {
     if (pinRequestId === 0) return;
     pinnedRef.current = true;
+    // Setting scrollTop fires a native 'scroll' event, which handleScroll below reacts
+    // to (clearing newBelow and — UX-35 — updating `pinned` state); no direct setState
+    // call belongs in this effect body.
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [pinRequestId]);
@@ -106,6 +114,7 @@ export function StoryScreen() {
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < PIN_THRESHOLD;
     pinnedRef.current = nearBottom;
+    setPinned(nearBottom);
     if (nearBottom) setNewBelow(false);
   }
 
@@ -113,6 +122,7 @@ export function StoryScreen() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
     pinnedRef.current = true;
+    setPinned(true);
     setNewBelow(false);
   }
 
@@ -131,7 +141,7 @@ export function StoryScreen() {
   }
 
   return (
-    <div className="screen story-screen">
+    <div className={`screen story-screen${pinned ? '' : ' reading-mode'}`}>
       {error && (
         <p className="error-text" role="alert">
           {error}

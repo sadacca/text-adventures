@@ -735,6 +735,27 @@ row and chips fold away smoothly, visibly more prose on screen; scroll back down
 send a command — they return. No layout jump when the score toast or new-text pill
 fires mid-read. All three themes.
 
+**Outcome (2026-07-17): done as specced, with one lint-driven adjustment.** `pinned`
+component state mirrors `pinnedRef` everywhere the ref is written, driving a
+`reading-mode` class on the screen root; `.exits-row`/`.verb-chips` gained a real
+`max-height` (60px, generous headroom) plus a 150ms `max-height`/`opacity`/`padding`
+transition, collapsed to 0 under `.reading-mode`. **Adjustment:** the `pinRequestId`
+effect originally also called `setPinned(true)` directly in the effect body to force
+re-pin — this repo's `react-hooks/set-state-in-effect` lint rule flags exactly that
+pattern. Removed it and leaned on the mechanism the file's own existing comment already
+documents: assigning `scrollTop` fires a native `scroll` event, which `handleScroll`
+(not the effect) reacts to — so the `pinned` update happens from the DOM event handler
+instead of synchronously in the effect, same as `newBelow` already did. No behavior
+change, just moved the `setState` call to where the linter wants it. `npm run
+lint`/`npm test` (217 tests, up from 213)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): scrolling the
+transcript to the top folded the exits row and verb chips away (confirmed via
+`.reading-mode` class and screenshot — visibly more prose on screen, FAB and command bar
+untouched); sending a command while scrolled up restored both immediately. Screenshotted
+in light, dark, and retro — legible in all three, no visual glitches during the
+collapse/restore.
+
 ---
 
 ## Appendix A — promoted for owner review from the ecosystem survey

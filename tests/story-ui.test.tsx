@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useEngineStore } from '../src/state/engineStore';
 import { useUiStore } from '../src/state/uiStore';
 import { useMapStore } from '../src/state/mapStore';
@@ -522,5 +522,68 @@ describe('StoryScreen score log (UX-29)', () => {
     render(<StoryScreen />);
     fireEvent.click(screen.getByLabelText('Score log'));
     expect(await screen.findByText("No points yet — they'll be logged here.")).toBeInTheDocument();
+  });
+});
+
+describe('StoryScreen reading mode (UX-35)', () => {
+  /** jsdom has no real layout, so scroll geometry has to be defined by hand — there's
+   *  no prior scroll test in this file to follow, per this task's own fallback note. */
+  function setScrollGeometry(
+    el: HTMLElement,
+    { scrollTop, scrollHeight, clientHeight }: Record<string, number>,
+  ) {
+    Object.defineProperty(el, 'scrollTop', {
+      value: scrollTop,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+  }
+
+  it('adds reading-mode when scrolled away from the bottom, and clears it once re-pinned via the new-text pill', () => {
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 1' },
+      transcript: ['West of House'],
+    });
+    const { container } = render(<StoryScreen />);
+    const transcriptEl = container.querySelector('.story-transcript')!;
+    const screenRoot = container.querySelector('.story-screen')!;
+
+    // Scrolled well up: far from the bottom.
+    setScrollGeometry(transcriptEl as HTMLElement, {
+      scrollTop: 0,
+      scrollHeight: 2000,
+      clientHeight: 500,
+    });
+    fireEvent.scroll(transcriptEl);
+    expect(screenRoot).toHaveClass('reading-mode');
+
+    // New text arrives while scrolled up — the pill appears instead of yanking the view.
+    act(() => {
+      useEngineStore.setState({ transcript: ['West of House', 'North of House'] });
+    });
+    fireEvent.click(screen.getByText('↓ New text'));
+    expect(screenRoot).not.toHaveClass('reading-mode');
+  });
+
+  it('does not add reading-mode while pinned at the bottom', () => {
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 1' },
+      transcript: ['West of House'],
+    });
+    const { container } = render(<StoryScreen />);
+    const transcriptEl = container.querySelector('.story-transcript')!;
+    const screenRoot = container.querySelector('.story-screen')!;
+
+    setScrollGeometry(transcriptEl as HTMLElement, {
+      scrollTop: 1950,
+      scrollHeight: 2000,
+      clientHeight: 500,
+    });
+    fireEvent.scroll(transcriptEl);
+    expect(screenRoot).not.toHaveClass('reading-mode');
   });
 });
