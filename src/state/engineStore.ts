@@ -24,6 +24,7 @@ import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
 import { useMapStore } from './mapStore.js';
 import { useDialogStore } from './dialogStore.js';
 import { detectUnknownWord } from '../story/oops.js';
+import { detectDeath } from '../story/death.js';
 
 /** DebugConsole's live event feed (Task 1.4): capped so a long session can't leak memory. */
 const DEBUG_EVENT_LIMIT = 300;
@@ -125,6 +126,11 @@ interface EngineState {
    *  fix-up. Cleared by any subsequent command. Session-only. */
   oopsWord: string | null;
 
+  /** UX-28: true when the most recently committed response contained a classic
+   *  death/ending banner (see story/death.ts), so StoryScreen can offer an inline Undo
+   *  shortcut. Cleared by any subsequent command. Session-only. */
+  deathDetected: boolean;
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -186,6 +192,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     set({ recapEntries: null });
   },
   oopsWord: null,
+  deathDetected: false,
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -214,6 +221,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       vocabulary: null,
       recapEntries: null,
       oopsWord: null,
+      deathDetected: false,
     });
 
     const game = await getGame(gameId);
@@ -274,7 +282,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       if (event.kind === 'command') {
         pendingCommand = event.text;
         pendingResponseChunks = [];
-        set({ oopsWord: null });
+        set({ oopsWord: null, deathDetected: false });
         return;
       }
 
@@ -318,7 +326,9 @@ export const useEngineStore = create<EngineState>((set, get) => ({
             pendingResponseChunks = [];
             // UX-27: a char prompt can't accept an `oops` line, so only line requests
             // are worth detecting against.
-            if (event.type === 'line') set({ oopsWord: detectUnknownWord(response) });
+            if (event.type === 'line') {
+              set({ oopsWord: detectUnknownWord(response), deathDetected: detectDeath(response) });
+            }
           }
           if (event.type === 'line') {
             lastKnownTurn = event.turn;
@@ -438,6 +448,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       vocabulary: null,
       recapEntries: null,
       oopsWord: null,
+      deathDetected: false,
     });
   },
 

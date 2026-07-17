@@ -26,6 +26,7 @@ export function StoryScreen() {
   const undoLastMove = useEngineStore((s) => s.undoLastMove);
   const recapEntries = useEngineStore((s) => s.recapEntries);
   const dismissRecap = useEngineStore((s) => s.dismissRecap);
+  const deathDetected = useEngineStore((s) => s.deathDetected);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
   const hasSeenTapHint = useUiStore((s) => s.hasSeenTapHint);
   const dismissTapHint = useUiStore((s) => s.dismissTapHint);
@@ -175,6 +176,31 @@ export function StoryScreen() {
       </div>
       <CompassRose />
       <VerbChips />
+      {deathDetected && (
+        <div className="death-banner">
+          <span>☠ Undo that move?</span>
+          <div className="death-banner-actions">
+            <button
+              type="button"
+              className="tap-target"
+              onClick={() => {
+                haptic();
+                void undoLastMove();
+              }}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              className="tap-target"
+              aria-label="Dismiss"
+              onClick={() => useEngineStore.setState({ deathDetected: false })}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
       <CommandBar />
       {debugConsoleEnabled && <DebugConsole />}
     </div>

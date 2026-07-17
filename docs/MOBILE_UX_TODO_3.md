@@ -359,6 +359,24 @@ places without a lamp is the quickest death): die, see the offer, tap Undo — b
 the pre-death turn, transcript consistent (UX-22's own acceptance). Dismissing instead
 leaves the game's own prompt usable. All three themes.
 
+**Outcome (2026-07-17): done as specced.** `detectDeath` added in `src/story/death.ts`
+against exactly the two starred banners, deliberately excluding the generic
+"story has ended" banner. `deathDetected` added to `engineStore`, computed alongside
+UX-27's `oopsWord` in the same line-commit branch, cleared on any subsequent command.
+`StoryScreen` renders the `☠ Undo that move?` banner above the command bar, Undo wired
+to the existing `undoLastMove()` with no `inputType` gate (per this task's own note that
+death can leave the interpreter in a non-`line` state). `npm run lint`/`npm test` (178
+tests, up from 172)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): took the window
+into the house, moved the rug, opened the trap door, went down into the unlit cellar,
+then walked (not waited — idling with `wait` in the dark never triggered the grue in
+this build, only movement did) until the grue's "Oh, no! ... devoured you!" banner hit;
+the Undo offer appeared, and tapping Undo rewound the status line from `Forest` (the
+game's own post-death respawn) back to `Cellar`, the turn just before death, exactly
+like UX-22's own acceptance. Screenshotted in light, dark, and retro — legible in all
+three, including retro's green-on-black.
+
 ### UX-29: Score log ("trophy log")
 
 UX-11's `scoreDelta` detection already fires a toast and haptic, then throws the

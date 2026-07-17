@@ -234,6 +234,37 @@
   color: var(--accent);
 }
 
+/* UX-28: death-aware undo offer — same chrome-banner family as .tap-hint-banner, above
+ * the command bar so it reads as an additive shortcut, not a replacement for the
+ * game's own RESTART/RESTORE/QUIT prompt underneath. */
+.death-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-bottom: var(--space-2);
+}
+
+.death-banner-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.death-banner-actions button {
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .error-text {
   color: var(--danger);
 }

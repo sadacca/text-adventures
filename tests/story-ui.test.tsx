@@ -437,3 +437,29 @@ describe('StoryScreen recap card (UX-25)', () => {
     expect(dismissRecap).toHaveBeenCalled();
   });
 });
+
+describe('StoryScreen death banner (UX-28)', () => {
+  it('renders the undo offer when deathDetected is true and wires Undo', () => {
+    const undoLastMove = vi.fn();
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'Cellar', right: 'Score: 0  Moves: 12' },
+      deathDetected: true,
+      undoLastMove,
+    });
+    render(<StoryScreen />);
+    expect(screen.getByText('☠ Undo that move?')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Undo'));
+    expect(undoLastMove).toHaveBeenCalled();
+  });
+
+  it('renders nothing when deathDetected is false', () => {
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'Cellar', right: 'Score: 0  Moves: 12' },
+      deathDetected: false,
+    });
+    render(<StoryScreen />);
+    expect(screen.queryByText('☠ Undo that move?')).not.toBeInTheDocument();
+  });
+});
