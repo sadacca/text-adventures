@@ -464,7 +464,18 @@ export function setRoomFloor(graph: MapGraph, id: string, floor: number): void {
 }
 
 type Pending =
-  { kind: 'move'; dir: Direction } | { kind: 'other'; label: string } | { kind: 'initial' };
+  | { kind: 'move'; dir: Direction }
+  | { kind: 'other'; label: string }
+  | { kind: 'undo' }
+  | { kind: 'initial' };
+
+/** `undo` (the game's own, v5+) or `/undo` (Bocfel's interpreter-level meta-command,
+ *  which works even for v3 games like Zork 1 — it's what prospective mapping uses to
+ *  step back after a probe move). Either way the turn REWINDS the world rather than
+ *  moving through it, so it must never mint an edge (see the `undo` pending kind). */
+function isUndoCommand(text: string): boolean {
+  return /^\/?undo$/i.test(text.trim());
+}
 
 /**
  * Consumes a GameEvent stream and maintains a MapGraph, per SPECS.md §3's 8 rules.
@@ -477,6 +488,17 @@ export class Automapper {
   /** UX-18: accumulates buffer_text seen since the last status_line, so mentions can be
    *  attributed to whichever room the turn resolves to (see applyMentions). */
   private pendingText = '';
+  /** The room the player most recently DEPARTED (the currentRoomId that was overwritten
+   *  by the last arrival). An undo turn that rewinds a room change returns exactly here
+   *  — crucial when the departed room is one of several same-named siblings (Zork's
+   *  "Forest"s), where a name-based re-resolution could land on the wrong twin.
+   *  Session-only; a fresh Automapper falls back to normal name resolution. */
+  private lastDepartedRoomId: string | null = null;
+  /** Whether the most recent turn changed rooms. A single-step undo of a room-changing
+   *  turn lands on `lastDepartedRoomId`; an undo of anything else stays put — the ONLY
+   *  way to tell those apart when the two rooms share a name (undoing Forest -e->
+   *  Forest leaves the status line identical and prints no arrival title). */
+  private lastTurnChangedRoom = false;
 
   constructor(graph: MapGraph = createEmptyGraph()) {
     this.graph = graph;
@@ -485,6 +507,10 @@ export class Automapper {
 
   handleEvent(event: GameEvent): void {
     if (event.kind === 'command') {
+      if (isUndoCommand(event.text)) {
+        this.pending = { kind: 'undo' };
+        return;
+      }
       const dir = normalizeDirection(event.text);
       this.pending = dir ? { kind: 'move', dir } : { kind: 'other', label: event.text.trim() };
       return;
@@ -547,6 +573,58 @@ export class Automapper {
   }
 
   /**
+   * Resolves where an undo turn landed, WITHOUT recording any edge, blockage, or
+   * teleport flag — the world was rewound, not traversed. Resolution order:
+   *
+   * 1. The last turn changed rooms and the departed node's name matches the status
+   *    line: the undo rewound that exact change — return to `lastDepartedRoomId`
+   *    itself. This is the only correct answer when the change was between two
+   *    same-named siblings (undoing Forest -e-> Forest leaves the status line
+   *    identical and prints no arrival title, so nothing else can disambiguate).
+   * 2. Status line unchanged from the current room: the undone turn wasn't a room
+   *    change (took an item, /undo) — stay put.
+   * 3. Otherwise (multi-step undo, undo across a session boundary): fall back to
+   *    normal name resolution, still edge-free.
+   */
+  private handleUndo(
+    name: string,
+    isUnknown: boolean,
+    sameAsCurrent: boolean,
+    description: string | null,
+  ): void {
+    const departed = this.graph.currentRoomId;
+    const arriveAt = (roomId: string) => {
+      this.lastDepartedRoomId = departed;
+      this.lastTurnChangedRoom = roomId !== departed;
+      this.graph.currentRoomId = roomId;
+    };
+
+    if (isUnknown) {
+      if (this.graph.currentRoomId !== UNKNOWN_ROOM_ID) this.ensureUnknownRoom();
+      arriveAt(UNKNOWN_ROOM_ID);
+      return;
+    }
+
+    if (this.lastTurnChangedRoom && this.lastDepartedRoomId) {
+      const prev = this.graph.rooms[this.lastDepartedRoomId];
+      if (prev && nameKey(prev.name) === nameKey(name)) {
+        rememberDescription(prev, description);
+        arriveAt(prev.id);
+        return;
+      }
+    }
+
+    if (sameAsCurrent) {
+      this.lastTurnChangedRoom = false;
+      return;
+    }
+
+    const room = resolveRoomOnArrival(this.graph, null, null, null, name, description);
+    this.applyFloor(null, null, room);
+    arriveAt(room.id);
+  }
+
+  /**
    * Rule 2 (widened): a blocked move creates no edge, but is still free, passive
    * evidence for rule 6's fingerprint — record the direction on the current room's
    * `blockedDirections`. If that room already has a CONFIRMED edge in this exact
@@ -590,6 +668,16 @@ export class Automapper {
         ? currentId === UNKNOWN_ROOM_ID
         : currentId !== UNKNOWN_ROOM_ID && nameKey(currentRoom.name) === nameKey(normalized));
 
+    // An undo turn REWINDS the world rather than moving through it: it must never mint
+    // an edge (an "/undo" custom edge was exactly the junk this used to create), and
+    // when it rewinds a room change it returns precisely to the departed node — which
+    // the sameAsCurrent logic below can't see when the two rooms share a name, so undo
+    // is handled before it.
+    if (pending.kind === 'undo') {
+      this.handleUndo(normalized, isUnknown, sameAsCurrent, arrival.description);
+      return;
+    }
+
     // rule 2, refined: an unchanged status line is only a blocked move if the prose
     // didn't announce an arrival. A successful move re-prints the destination's title
     // line ("Forest" -> east -> "Forest"), which is the one signal that separates
@@ -598,20 +686,15 @@ export class Automapper {
     const sameNameMove = sameAsCurrent && pending.kind === 'move' && arrival.announced;
     if (sameAsCurrent && !sameNameMove) {
       if (pending.kind === 'move') this.handleBlockedMove(pending.dir);
+      this.lastTurnChangedRoom = false;
       return; // blocked move (or repeated teleport/unknown)
     }
 
     if (isUnknown) {
       // rule 5: dark room / unrecognized status -> shared singleton, no edges recorded
-      if (!this.graph.rooms[UNKNOWN_ROOM_ID]) {
-        this.graph.rooms[UNKNOWN_ROOM_ID] = {
-          id: UNKNOWN_ROOM_ID,
-          name: UNKNOWN_ROOM_NAME,
-          pos: { x: 0, y: 0 },
-          posLocked: false,
-          flags: { unknown: true },
-        };
-      }
+      this.ensureUnknownRoom();
+      this.lastDepartedRoomId = this.graph.currentRoomId;
+      this.lastTurnChangedRoom = true;
       this.graph.currentRoomId = UNKNOWN_ROOM_ID;
       return;
     }
@@ -643,7 +726,20 @@ export class Automapper {
     );
     this.applyFloor(null, null, room);
     if (pending.kind === 'other') room.flags.teleportTarget = true;
+    this.lastDepartedRoomId = this.graph.currentRoomId;
+    this.lastTurnChangedRoom = true;
     this.graph.currentRoomId = room.id;
+  }
+
+  private ensureUnknownRoom(): void {
+    if (this.graph.rooms[UNKNOWN_ROOM_ID]) return;
+    this.graph.rooms[UNKNOWN_ROOM_ID] = {
+      id: UNKNOWN_ROOM_ID,
+      name: UNKNOWN_ROOM_NAME,
+      pos: { x: 0, y: 0 },
+      posLocked: false,
+      flags: { unknown: true },
+    };
   }
 
   private handleMovement(
@@ -657,6 +753,20 @@ export class Automapper {
     const compassDir = isCompassDirection(dir) ? dir : null;
     const destRoom = resolveRoomOnArrival(this.graph, from, dir, compassDir, destName, description);
     this.applyFloor(from, compassDir, destRoom);
+
+    // A recorded blockage in this exact direction is now stale — the obstacle was
+    // state, not geography (a window opened, a trap door lifted). Most-recent
+    // observation wins for passability; keeping both would leave a permanently
+    // self-contradictory fingerprint that rule 6's disambiguation reads as evidence of
+    // a text-ambiguous merge. (Prospective mapping makes this common: probing a shut
+    // door records the block, then the player opens it and walks through.)
+    if (from != null && compassDir != null) {
+      const fromRoom = this.graph.rooms[from];
+      if (fromRoom?.blockedDirections?.includes(compassDir)) {
+        const remaining = fromRoom.blockedDirections.filter((d) => d !== compassDir);
+        fromRoom.blockedDirections = remaining.length > 0 ? remaining : undefined;
+      }
+    }
     // A real self-loop exit ("north leads back here") says nothing about the opposite
     // direction, so no reverse is inferred for it.
     const inferReverse = compassDir != null && destRoom.id !== from;
@@ -694,6 +804,8 @@ export class Automapper {
       }
     }
 
+    this.lastDepartedRoomId = fromId;
+    this.lastTurnChangedRoom = destRoom.id !== fromId;
     this.graph.currentRoomId = destRoom.id;
   }
 }

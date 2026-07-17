@@ -801,6 +801,102 @@ describe('UX-18: mentioned directions', () => {
   });
 });
 
+describe('undo turns (undo / Bocfel "/undo")', () => {
+  it('returns to the departed room without minting any edge', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Hall', 0));
+    am.handleEvent(cmd('n', 1));
+    am.handleEvent(status('Kitchen', 1));
+
+    am.handleEvent(cmd('/undo', 2));
+    am.handleEvent(bufferText('[Undone]', 2));
+    am.handleEvent(status('Hall', 2));
+
+    expect(am.graph.currentRoomId).toBe('hall');
+    // Only the original move's edge pair — no "/undo" custom edge, no new confirmed s.
+    expect(am.graph.edges).toEqual([
+      { from: 'hall', to: 'kitchen', dir: 'n', status: 'confirmed' },
+      { from: 'kitchen', to: 'hall', dir: 's', status: 'inferred' },
+    ]);
+  });
+
+  it('plain "undo" (v5+ games) is treated the same as "/undo"', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Hall', 0));
+    am.handleEvent(cmd('n', 1));
+    am.handleEvent(status('Kitchen', 1));
+    am.handleEvent(cmd('undo', 2));
+    am.handleEvent(status('Hall', 2));
+
+    expect(am.graph.currentRoomId).toBe('hall');
+    expect(am.graph.edges.some((e) => e.dir.includes('undo'))).toBe(false);
+  });
+
+  it('undoing a move between two same-named rooms returns to the correct twin', () => {
+    const am = new Automapper();
+    am.handleEvent(bufferText('Forest\nThis is a dark forest.', 0));
+    am.handleEvent(status('Forest', 0));
+    // A same-name move needs the arrival title in the prose to register (rule 2).
+    am.handleEvent(cmd('e', 1));
+    am.handleEvent(bufferText('Forest\nThe trees thin out here.', 1));
+    am.handleEvent(status('Forest', 1));
+    expect(am.graph.currentRoomId).toBe('forest#2');
+
+    // The undo's status line is IDENTICAL and prints no arrival title — only the
+    // departed-room memory can know this went back to the first Forest.
+    am.handleEvent(cmd('/undo', 2));
+    am.handleEvent(bufferText('[Undone]', 2));
+    am.handleEvent(status('Forest', 2));
+
+    expect(am.graph.currentRoomId).toBe('forest');
+    expect(am.graph.edges).toEqual([
+      { from: 'forest', to: 'forest#2', dir: 'e', status: 'confirmed' },
+      { from: 'forest#2', to: 'forest', dir: 'w', status: 'inferred' },
+    ]);
+  });
+
+  it('undoing a non-move stays put and records nothing', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Hall', 0));
+    am.handleEvent(cmd('n', 1));
+    am.handleEvent(status('Kitchen', 1));
+    am.handleEvent(cmd('take lamp', 2));
+    am.handleEvent(status('Kitchen', 2));
+
+    am.handleEvent(cmd('/undo', 3));
+    am.handleEvent(bufferText('[Undone]', 3));
+    am.handleEvent(status('Kitchen', 3));
+
+    expect(am.graph.currentRoomId).toBe('kitchen');
+    expect(am.graph.rooms['kitchen'].blockedDirections).toBeUndefined();
+    expect(am.graph.edges).toHaveLength(2); // just the n move's confirmed + inferred pair
+  });
+});
+
+describe('rule 2 refinement: a later successful move clears a stale blockage', () => {
+  it('drops the direction from blockedDirections once traversal succeeds (door opened)', () => {
+    const am = new Automapper();
+    am.handleEvent(status('Behind House', 0));
+    am.handleEvent(cmd('w', 1));
+    am.handleEvent(status('Behind House', 1)); // window shut: blocked, recorded
+    expect(am.graph.rooms['behind-house'].blockedDirections).toEqual(['w']);
+
+    am.handleEvent(cmd('open window', 2));
+    am.handleEvent(status('Behind House', 2));
+    am.handleEvent(cmd('w', 3));
+    am.handleEvent(status('Kitchen', 3));
+
+    expect(am.graph.currentRoomId).toBe('kitchen');
+    expect(am.graph.rooms['behind-house'].blockedDirections).toBeUndefined();
+    expect(am.graph.edges).toContainEqual({
+      from: 'behind-house',
+      to: 'kitchen',
+      dir: 'w',
+      status: 'confirmed',
+    });
+  });
+});
+
 describe('Batch 4: room floors', () => {
   it('gives the first room of a fresh game floor 0', () => {
     const am = new Automapper();

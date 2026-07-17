@@ -31,6 +31,11 @@ interface Segment {
   // edges, but rendered as short stubs whose direction isn't obvious from geometry
   // alone — see isStubDirection).
   label?: string;
+  /** Direction-confirmation marker: set when travel between the pair is CONFIRMED in
+   *  exactly one direction (the other untraveled or known one-way) — an arrowhead at
+   *  this position/rotation, pointing the way that's actually been walked. Absent when
+   *  both directions are confirmed (plain line) or neither is (dashed guess). */
+  arrow?: { x: number; y: number; angle: number };
 }
 
 interface ViewBox {
@@ -86,19 +91,48 @@ function buildSegments(
     }
   }
 
+  // Live confirmed connections by room pair, for the one-way arrowheads below: travel
+  // is proven a->b when ANY live confirmed edge (compass or custom) goes a->b.
+  const confirmedPairs = new Set<string>();
+  for (const edge of graph.edges) {
+    if (!edge.userDeleted && edge.status === 'confirmed' && graph.rooms[edge.from] && graph.rooms[edge.to]) {
+      confirmedPairs.add(`${edge.from}>${edge.to}`);
+    }
+  }
+
   const segments = [...byPair.entries()].map(([key, edge]) => {
     const a = graph.rooms[edge.from];
     const b = graph.rooms[edge.to];
     const custom = !isCompassDirection(edge.dir);
+    const x1 = a.pos.x * UNIT;
+    const y1 = a.pos.y * UNIT;
+    const x2 = b.pos.x * UNIT;
+    const y2 = b.pos.y * UNIT;
+
+    // Exactly one confirmed direction -> arrowhead pointing the proven way, placed at
+    // 65% along the line (off the midpoint, where custom/stub edges draw their label).
+    const forward = confirmedPairs.has(`${edge.from}>${edge.to}`);
+    const reverse = confirmedPairs.has(`${edge.to}>${edge.from}`);
+    let arrow: Segment['arrow'];
+    if (forward !== reverse) {
+      const [fx, fy, tx, ty] = forward ? [x1, y1, x2, y2] : [x2, y2, x1, y1];
+      arrow = {
+        x: fx + (tx - fx) * 0.65,
+        y: fy + (ty - fy) * 0.65,
+        angle: (Math.atan2(ty - fy, tx - fx) * 180) / Math.PI,
+      };
+    }
+
     return {
       key,
-      x1: a.pos.x * UNIT,
-      y1: a.pos.y * UNIT,
-      x2: b.pos.x * UNIT,
-      y2: b.pos.y * UNIT,
+      x1,
+      y1,
+      x2,
+      y2,
       dashed: edge.status === 'inferred',
       custom,
       label: custom || isStubDirection(edge.dir) ? edge.dir : undefined,
+      arrow,
     };
   });
 
@@ -489,6 +523,13 @@ export function MapScreen() {
                 >
                   {seg.label}
                 </text>
+              )}
+              {seg.arrow && (
+                <polygon
+                  className="map-edge-arrow"
+                  points="-5,-4 6,0 -5,4"
+                  transform={`translate(${seg.arrow.x}, ${seg.arrow.y}) rotate(${seg.arrow.angle})`}
+                />
               )}
             </g>
           ))}
