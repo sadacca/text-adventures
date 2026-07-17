@@ -366,3 +366,26 @@ describe('StoryScreen status line', () => {
     expect(undoLastMove).toHaveBeenCalled();
   });
 });
+
+describe('StoryScreen recap card (UX-25)', () => {
+  it('renders recapEntries and dismisses via Continue', () => {
+    const dismissRecap = vi.fn();
+    useUiStore.setState({ hasSeenTapHint: true });
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 4' },
+      recapEntries: [
+        { command: 'e', response: 'East' },
+        { command: 's', response: 'South' },
+        { command: 'w', response: 'West' },
+      ],
+      dismissRecap,
+    });
+    render(<StoryScreen />);
+    expect(screen.getByText('While you were away…')).toBeInTheDocument();
+    expect(screen.getByText("You're at: West of House")).toBeInTheDocument();
+    expect(screen.getByText('Last moves: e · s · w')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Continue'));
+    expect(dismissRecap).toHaveBeenCalled();
+  });
+});

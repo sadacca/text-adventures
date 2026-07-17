@@ -19,6 +19,7 @@ import {
   getTranscript,
   trimTranscriptAfterTurn,
 } from '../storage/transcripts.js';
+import type { TranscriptEntry } from '../storage/db.js';
 import { bufferTextEndsInQuestion, type TravelStep } from '../map/travel.js';
 import { useMapStore } from './mapStore.js';
 import { useDialogStore } from './dialogStore.js';
@@ -28,6 +29,10 @@ const DEBUG_EVENT_LIMIT = 300;
 
 /** Task 1.8 tap-to-travel outcome, per SPECS.md §3's abort conditions. */
 export type TravelResult = 'completed' | 'blocked' | 'question' | 'char_input';
+
+/** UX-25: how long since `lastPlayedAt` counts as a real away-gap worth recapping,
+ *  rather than e.g. a quick tab switch. */
+const RECAP_GAP_MS = 12 * 60 * 60 * 1000;
 
 /**
  * Bocfel prints its own "[Starting/End of history playback]" scrollback replay as part
@@ -108,6 +113,12 @@ interface EngineState {
    *  failed (corrupt/unsupported file) or no game is open. */
   vocabulary: Vocabulary | null;
 
+  /** UX-25: set by openGame when resuming after a real away-gap (>= RECAP_GAP_MS since
+   *  lastPlayedAt), so StoryScreen can show the recap card. Cleared by dismissal or by
+   *  sending any command. Session-only. */
+  recapEntries: { command: string; response: string }[] | null;
+  dismissRecap: () => void;
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -164,6 +175,10 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   pinRequestId: 0,
   scoreDelta: null,
   vocabulary: null,
+  recapEntries: null,
+  dismissRecap() {
+    set({ recapEntries: null });
+  },
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -190,6 +205,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       debugEvents: [],
       scoreDelta: null,
       vocabulary: null,
+      recapEntries: null,
     });
 
     const game = await getGame(gameId);
@@ -197,6 +213,8 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       set({ loading: false, error: 'Game not found' });
       return;
     }
+    // UX-25: captured before touchLastPlayed (below) overwrites it.
+    const lastPlayedAtBeforeTouch = game.lastPlayedAt;
     set({ gameTitle: game.title });
     set({ vocabulary: parseVocabulary(new Uint8Array(game.bytes)) });
 
@@ -363,11 +381,27 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     // guarantees start() doesn't resolve early. Rebuild the visible scrollback from our
     // own transcript log (not Bocfel's "history playback", which replays every command
     // it ever saw, autosave noise included).
+    let priorEntries: TranscriptEntry[] = [];
     if (resuming) {
-      const priorEntries = await getTranscript(gameId);
+      priorEntries = await getTranscript(gameId);
       const rendered = priorEntries.map((e) => e.response).filter(Boolean);
       if (rendered.length > 0) set({ transcript: rendered });
       resuming = false;
+    }
+
+    // UX-25: an away-gap recap, assembled from data already fetched above — no extra
+    // reads. Only when there was a real autosave to resume from, the gap was long enough
+    // to be worth recapping, and there's at least one transcript entry to show.
+    if (
+      latestAutosave !== null &&
+      Date.now() - lastPlayedAtBeforeTouch >= RECAP_GAP_MS &&
+      priorEntries.length > 0
+    ) {
+      const recap = priorEntries
+        .slice(-3)
+        .filter((e) => e.command.trim() !== '')
+        .map((e) => ({ command: e.command, response: e.response }));
+      if (recap.length > 0) set({ recapEntries: recap });
     }
 
     await touchLastPlayed(gameId);
@@ -390,12 +424,13 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       recordingFixture: false,
       scoreDelta: null,
       vocabulary: null,
+      recapEntries: null,
     });
   },
 
   sendCommand(text) {
     activeEngine?.sendCommand(text);
-    set((s) => ({ pinRequestId: s.pinRequestId + 1 }));
+    set((s) => ({ pinRequestId: s.pinRequestId + 1, recapEntries: null }));
   },
 
   sendChar(value) {

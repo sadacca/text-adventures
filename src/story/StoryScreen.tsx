@@ -24,6 +24,8 @@ export function StoryScreen() {
   const pinRequestId = useEngineStore((s) => s.pinRequestId);
   const scoreDelta = useEngineStore((s) => s.scoreDelta);
   const undoLastMove = useEngineStore((s) => s.undoLastMove);
+  const recapEntries = useEngineStore((s) => s.recapEntries);
+  const dismissRecap = useEngineStore((s) => s.dismissRecap);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
   const hasSeenTapHint = useUiStore((s) => s.hasSeenTapHint);
   const dismissTapHint = useUiStore((s) => s.dismissTapHint);
@@ -143,6 +145,18 @@ export function StoryScreen() {
           <span>Tap a word to add it to your command · hold a word to examine it</span>
           <button type="button" className="tap-target" onClick={dismissTapHint}>
             Got it
+          </button>
+        </div>
+      )}
+      {hasSeenTapHint && recapEntries && (
+        <div className="recap-card">
+          <div className="recap-title">While you were away…</div>
+          {status && <div className="recap-line">You're at: {status.left}</div>}
+          <div className="recap-line">
+            Last moves: {recapEntries.map((e) => e.command).join(' · ')}
+          </div>
+          <button type="button" className="tap-target" onClick={dismissRecap}>
+            Continue
           </button>
         </div>
       )}

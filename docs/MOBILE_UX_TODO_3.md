@@ -122,6 +122,18 @@ few turns, then (devtools) rewrite the game record's `lastPlayedAt` to 2 days ag
 reload — the recap card shows room, and last commands; tapping Continue or sending any
 command dismisses it. Check the card in all three themes.
 
+**Outcome (2026-07-17): done as specced.** `recapEntries`/`dismissRecap` added to
+`engineStore`; `lastPlayedAtBeforeTouch` captured before `touchLastPlayed` overwrites it;
+`priorEntries` (already fetched for scrollback rebuild) reused rather than re-read. The
+card is gated on `hasSeenTapHint` so it never competes with the tap-hint banner for the
+same slot, matching this task's own stated intent. `npm run lint`/`npm test` (165 tests,
+up from 159)/`npm run format`/`npm run build` all pass. **Live-verified with real
+Playwright** (390×844, `npm run build && npm run preview`, real Chromium, bundled
+`zork1.z3`): played `north`, rewrote the game record's `lastPlayedAt` to 2 days ago
+directly in IndexedDB, reloaded — the card showed "You're at: North of House" / "Last
+moves: north"; tapping Continue dismissed it. Screenshotted in light, dark, and retro —
+legible in all three.
+
 ### UX-26: Retrace — one-tap "go back the way I came" [visual check]
 
 **Why:** getting *into* trouble is one tap per move; getting back out means re-tapping a
