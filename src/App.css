@@ -150,6 +150,14 @@
   line-height: 1;
 }
 
+/* UX-30: checkpoint button, same sizing/class family as .status-line-undo, docked
+ * immediately after it (no margin-left: auto needed — undo's already pushed this pair
+ * to the row's right edge). */
+.status-line-checkpoint {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
 /* UX-11 (revisit): a discreet score-increase callout — right-aligned under the status
  * line's score/moves text, so it reads as an annotation of the score rather than a
  * notification. Replaces an earlier floating accent-pill/star version that user testing

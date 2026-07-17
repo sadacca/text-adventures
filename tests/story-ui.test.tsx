@@ -414,6 +414,23 @@ describe('StoryScreen status line', () => {
     fireEvent.click(screen.getByLabelText('Undo last move'));
     expect(undoLastMove).toHaveBeenCalled();
   });
+
+  it('UX-30: renders a checkpoint button next to Undo, wired to saveCheckpoint', () => {
+    const saveCheckpoint = vi.fn();
+    useEngineStore.setState({
+      gameId: 'g1',
+      status: { left: 'West of House', right: 'Score: 0  Moves: 1' },
+      saveCheckpoint,
+    });
+    render(<StoryScreen />);
+    const undo = screen.getByLabelText('Undo last move');
+    const checkpoint = screen.getByLabelText('Save checkpoint');
+    expect(
+      checkpoint.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+    fireEvent.click(checkpoint);
+    expect(saveCheckpoint).toHaveBeenCalled();
+  });
 });
 
 describe('StoryScreen recap card (UX-25)', () => {

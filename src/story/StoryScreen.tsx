@@ -28,6 +28,8 @@ export function StoryScreen() {
   const recapEntries = useEngineStore((s) => s.recapEntries);
   const dismissRecap = useEngineStore((s) => s.dismissRecap);
   const deathDetected = useEngineStore((s) => s.deathDetected);
+  const checkpointSaved = useEngineStore((s) => s.checkpointSaved);
+  const saveCheckpoint = useEngineStore((s) => s.saveCheckpoint);
   const debugConsoleEnabled = useUiStore((s) => s.debugConsoleEnabled);
   const hasSeenTapHint = useUiStore((s) => s.hasSeenTapHint);
   const dismissTapHint = useUiStore((s) => s.dismissTapHint);
@@ -57,6 +59,15 @@ export function StoryScreen() {
     }, SCORE_TOAST_MS);
     return () => clearTimeout(timer);
   }, [scoreDelta]);
+
+  // UX-30: same retrigger-on-repeat/auto-dismiss pattern as the score toast above.
+  useEffect(() => {
+    if (!checkpointSaved) return;
+    const timer = setTimeout(() => {
+      useEngineStore.setState({ checkpointSaved: null });
+    }, SCORE_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [checkpointSaved]);
 
   // Smart scroll pinning: only auto-scroll to the newest text when the player was
   // already at (or near) the bottom. Otherwise they're reading back, so surface a pill
@@ -146,11 +157,27 @@ export function StoryScreen() {
           >
             ↶
           </button>
+          <button
+            type="button"
+            className="status-line-checkpoint tap-target"
+            aria-label="Save checkpoint"
+            onClick={() => {
+              haptic();
+              void saveCheckpoint();
+            }}
+          >
+            ⚑
+          </button>
         </div>
       )}
       {scoreDelta && (
         <div key={scoreDelta.id} className="score-callout" aria-live="polite">
           +{scoreDelta.amount}
+        </div>
+      )}
+      {checkpointSaved && (
+        <div key={checkpointSaved.id} className="score-callout" aria-live="polite">
+          ⚑ Saved
         </div>
       )}
       {!hasSeenTapHint && (

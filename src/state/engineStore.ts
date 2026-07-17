@@ -132,6 +132,10 @@ interface EngineState {
    *  shortcut. Cleared by any subsequent command. Session-only. */
   deathDetected: boolean;
 
+  /** UX-30: bumped by saveCheckpoint() so StoryScreen can show a "⚑ Saved" toast (same
+   *  retrigger-on-repeat pattern as scoreDelta's id counter). Session-only. */
+  checkpointSaved: { id: number } | null;
+
   openGame: (gameId: string) => Promise<void>;
   closeGame: () => void;
   sendCommand: (text: string) => void;
@@ -145,6 +149,12 @@ interface EngineState {
    *  it — the same teardown-and-reopen path restartPlaythrough uses, just without
    *  wiping the playthrough. No-ops with an alert if there's nothing to step back to. */
   undoLastMove: () => Promise<void>;
+  /** UX-30: snapshots the current state under an auto-generated name via the same
+   *  Quetzal-producing engine.saveAutosave() the per-turn autosave uses (NOT the
+   *  in-game SAVE command, which would round-trip through the game's own prompt) —
+   *  written as a named save, so it survives in More's saves list and restores through
+   *  the existing restoreNamed flow. No-ops if no game is open. */
+  saveCheckpoint: () => Promise<void>;
   /** Task 1.8 tap-to-travel: sends `path`'s moves one at a time, waiting for each
    *  resulting turn to fully settle before sending the next, and aborts immediately if
    *  a response deviates from what the map expects (SPECS.md §3): the room reached
@@ -161,6 +171,7 @@ let recordedRaw: RawMessage[] = [];
 /** UX-11: previous turn's parsed score, so status_line handling can detect an increase. */
 let previousScore: number | null = null;
 let scoreDeltaCounter = 0;
+let checkpointSavedCounter = 0;
 
 function teardownActiveSession() {
   activeCleanup?.();
@@ -194,6 +205,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
   },
   oopsWord: null,
   deathDetected: false,
+  checkpointSaved: null,
 
   startRecordingFixture() {
     recordedRaw = [];
@@ -223,6 +235,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       recapEntries: null,
       oopsWord: null,
       deathDetected: false,
+      checkpointSaved: null,
     });
 
     const game = await getGame(gameId);
@@ -459,6 +472,7 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       recapEntries: null,
       oopsWord: null,
       deathDetected: false,
+      checkpointSaved: null,
     });
   },
 
@@ -502,6 +516,20 @@ export const useEngineStore = create<EngineState>((set, get) => ({
     }
     await trimTranscriptAfterTurn(gameId, previous.turn);
     await get().openGame(gameId);
+  },
+
+  async saveCheckpoint() {
+    const { gameId, status } = get();
+    if (!gameId || !activeEngine) return;
+    const baseName = `Checkpoint — ${status?.left ?? 'Unknown'} — turn ${lastKnownTurn}`;
+    const existingNames = new Set((await listSaves(gameId)).map((s) => s.name));
+    let name = baseName;
+    for (let n = 2; existingNames.has(name); n++) name = `${baseName} (${n})`;
+    const bytes = await activeEngine.saveAutosave();
+    await writeSave(gameId, name, bytes, lastKnownTurn);
+    await get().refreshSaves();
+    checkpointSavedCounter += 1;
+    set({ checkpointSaved: { id: checkpointSavedCounter } });
   },
 
   async travelTo(path) {

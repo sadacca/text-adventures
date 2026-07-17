@@ -479,6 +479,23 @@ the mocked action.
 checkpoint in More → Saves, restore it after moving elsewhere — state returns. All
 three themes.
 
+**Outcome (2026-07-17): done as specced — the format-compatibility check this task
+flagged passed, no STOP needed.** `saveCheckpoint()` calls the same `saveAutosave()`
+the per-turn autosave already uses (real Quetzal bytes via the interpreter's own Glk
+SAVE opcode, per `engine.ts`'s own doc comment), writes them via `writeSave`, and dedupes
+same-turn repeats with a numeric suffix. Confirmation reuses `.score-callout` styling
+(generalized slightly: a second `checkpointSaved: { id }` counter mirroring
+`scoreDelta`'s retrigger-on-repeat pattern, its own toast div, same CSS class — kept the
+diff small rather than inventing a shared toast abstraction). `npm run lint`/`npm test`
+(189 tests, up from 184)/`npm run format`/`npm run build` all pass.
+
+**Live-verified with real Playwright** (390×844, bundled `zork1.z3`): tapped ⚑ at West
+of House, saw the "⚑ Saved" toast; the checkpoint appeared in More → Saves as
+`Checkpoint — West of House — turn 0`; moved `north` to North of House; tapped Restore
+— the status line returned to `West of House`, confirming a `saveAutosave()` snapshot
+genuinely round-trips through `restoreNamed`'s in-game RESTORE path. Screenshotted in
+light, dark, and retro — legible in all three.
+
 ---
 
 ## Batch 8 — navigation and command-loop power
