@@ -2,17 +2,26 @@ import { gridOffset } from './directions.js';
 import type { Direction, MapGraph, RoomNode } from './graph.js';
 
 /**
- * Assigns grid positions to every non-`posLocked` room, BFS-ing outward from the
- * current room along edges and offsetting each hop by its direction's grid vector
- * (SPECS.md §2). Collisions (two rooms wanting the same cell) are resolved by shifting
- * to the nearest free cell — simple and deterministic, no force-directed layout
- * (IMPLEMENTATION_PLAN.md Task 1.8). `posLocked` rooms (set once a user drags a room —
- * Task 1.8 polish, not implemented yet) are never moved, only treated as fixed anchors.
+ * Assigns grid positions to rooms, floor by floor (SPECS.md §2; Batch 4 / UX-21 groups
+ * rooms by `floor ?? 0` and lays each floor out independently — different floors freely
+ * reuse the same x/y coordinates, harmless since `MapScreen` renders one floor at a
+ * time).
  *
- * Batch 4 / UX-21: rooms are grouped by `floor` (`?? 0`) first, and each floor is laid
- * out independently by `layoutFloor` (same BFS below, scoped to just that floor's rooms
- * and edges). Different floors freely reuse the same x/y coordinates — harmless, since
- * `MapScreen` only ever renders one floor's rooms at a time.
+ * 2026-07-17 rework, map stability: layout is now INCREMENTAL. A room that has ever
+ * been placed (`posAssigned`, or `posLocked` from a user drag) keeps its position on
+ * every later run; only never-placed rooms are positioned, BFS-ing outward from the
+ * already-placed part of the floor and offsetting each hop by its direction's grid
+ * vector. The previous design re-derived the whole floor from scratch on every event,
+ * anchored at the CURRENT room — so re-entering a floor from a different room (the
+ * normal thing to do after going up/down stairs) re-anchored the BFS somewhere new and
+ * reshuffled the entire floor. Now the anchor for a floor's very first layout is that
+ * floor's first-discovered room, and everything after that only ever adds to a stable
+ * picture.
+ *
+ * Collision resolution is footprint-aware: a candidate cell is free only if no placed
+ * room sits within a room-box-plus-margin of it (the old exact-cell-key check let
+ * fractional positions — up/down's 0.5/1.35 offsets — land half a cell from an integer
+ * cell and overlap its label).
  */
 export function computeLayout(graph: MapGraph): void {
   const rooms = Object.values(graph.rooms);
@@ -26,29 +35,42 @@ export function computeLayout(graph: MapGraph): void {
     else byFloor.set(floor, [room]);
   }
 
-  const currentRoom = graph.currentRoomId !== null ? graph.rooms[graph.currentRoomId] : undefined;
-
-  for (const [floor, floorRooms] of byFloor) {
-    const start =
-      (currentRoom && (currentRoom.floor ?? 0) === floor ? currentRoom : undefined) ??
-      floorRooms.find((r) => r.posLocked) ??
-      floorRooms[0];
-    layoutFloor(graph, floorRooms, start);
+  for (const floorRooms of byFloor.values()) {
+    layoutFloor(graph, floorRooms);
   }
 }
 
-/** The single-floor BFS + collision-resolution pass, scoped to `floorRooms`/`start`
- *  (all on the same floor) — verbatim the algorithm `computeLayout` used to run once
- *  over the whole graph, before Batch 4 / UX-21 split it per floor. */
-function layoutFloor(graph: MapGraph, floorRooms: RoomNode[], start: RoomNode): void {
-  const occupied = new Map<string, string>();
+/** Minimum center-to-center separation (in grid cells) below which two rooms' boxes
+ *  (92x48 px at 110 px/cell, so 0.84x0.44 cells) are considered overlapping. Slightly
+ *  larger than the box itself so labels keep breathing room. */
+const MIN_SEP_X = 0.9;
+const MIN_SEP_Y = 0.6;
+
+/** Places every not-yet-placed room on this floor, BFS-ing outward from the rooms that
+ *  already have positions (multi-source), in stable insertion order. */
+function layoutFloor(graph: MapGraph, floorRooms: RoomNode[]): void {
+  const occupied: { x: number; y: number }[] = [];
+  const visited = new Set<string>();
+  const queue: RoomNode[] = [];
+
   for (const room of floorRooms) {
-    if (room.posLocked) occupied.set(cellKey(room.pos), room.id);
+    if (room.posLocked || room.posAssigned) {
+      occupied.push(room.pos);
+      visited.add(room.id);
+      queue.push(room);
+    }
   }
 
-  const visited = new Set<string>([start.id]);
-  const queue: RoomNode[] = [start];
-  if (!start.posLocked) place(start, start.pos ?? { x: 0, y: 0 }, occupied);
+  // First layout of this floor: anchor at its first-discovered room, at wherever it
+  // already sits (persisted maps keep old coordinates; fresh rooms default to 0,0).
+  // Deliberately NOT the current room — the anchor must not depend on where the player
+  // happens to stand, or the floor re-anchors every time it's re-entered elsewhere.
+  if (queue.length === 0) {
+    const anchor = floorRooms[0];
+    place(anchor, findFreePos(anchor.pos, occupied), occupied);
+    visited.add(anchor.id);
+    queue.push(anchor);
+  }
 
   while (queue.length > 0) {
     const room = queue.shift()!;
@@ -56,13 +78,9 @@ function layoutFloor(graph: MapGraph, floorRooms: RoomNode[], start: RoomNode): 
       const neighbor = graph.rooms[roomId];
       if (!neighbor || visited.has(neighbor.id)) continue;
       visited.add(neighbor.id);
-      if (!neighbor.posLocked) {
-        const offset = gridOffset(dir) ?? { dx: 1.5, dy: 0 }; // in/out: nudge sideways
-        const desired = { x: room.pos.x + offset.dx, y: room.pos.y + offset.dy };
-        place(neighbor, findFreeCell(desired, occupied), occupied);
-      } else if (!occupied.has(cellKey(neighbor.pos))) {
-        occupied.set(cellKey(neighbor.pos), neighbor.id);
-      }
+      const offset = gridOffset(dir) ?? { dx: 1.5, dy: 0 }; // custom edges: nudge sideways
+      const desired = { x: room.pos.x + offset.dx, y: room.pos.y + offset.dy };
+      place(neighbor, findFreePos(desired, occupied), occupied);
       queue.push(neighbor);
     }
   }
@@ -71,26 +89,29 @@ function layoutFloor(graph: MapGraph, floorRooms: RoomNode[], start: RoomNode): 
   // Maze duplicates) still need to be visible: line them up off to the side.
   let floatIndex = 0;
   for (const room of floorRooms) {
-    if (visited.has(room.id) || room.posLocked) continue;
-    place(room, findFreeCell({ x: -3, y: floatIndex * 1.5 }, occupied), occupied);
+    if (visited.has(room.id)) continue;
+    place(room, findFreePos({ x: -3, y: floatIndex * 1.5 }, occupied), occupied);
     floatIndex++;
   }
 }
 
-function place(room: RoomNode, pos: { x: number; y: number }, occupied: Map<string, string>) {
+function place(room: RoomNode, pos: { x: number; y: number }, occupied: { x: number; y: number }[]) {
   room.pos = pos;
-  occupied.set(cellKey(pos), room.id);
+  room.posAssigned = true;
+  occupied.push(pos);
 }
 
-function cellKey(pos: { x: number; y: number }): string {
-  return `${Math.round(pos.x * 10)},${Math.round(pos.y * 10)}`;
+function collides(pos: { x: number; y: number }, occupied: { x: number; y: number }[]): boolean {
+  return occupied.some(
+    (o) => Math.abs(o.x - pos.x) < MIN_SEP_X && Math.abs(o.y - pos.y) < MIN_SEP_Y,
+  );
 }
 
-function findFreeCell(
+function findFreePos(
   desired: { x: number; y: number },
-  occupied: Map<string, string>,
+  occupied: { x: number; y: number }[],
 ): { x: number; y: number } {
-  if (!occupied.has(cellKey(desired))) return desired;
+  if (!collides(desired, occupied)) return desired;
   const cx = Math.round(desired.x);
   const cy = Math.round(desired.y);
   for (let radius = 1; radius <= 8; radius++) {
@@ -98,7 +119,7 @@ function findFreeCell(
       for (let dy = -radius; dy <= radius; dy++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
         const candidate = { x: cx + dx, y: cy + dy };
-        if (!occupied.has(cellKey(candidate))) return candidate;
+        if (!collides(candidate, occupied)) return candidate;
       }
     }
   }

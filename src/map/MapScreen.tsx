@@ -120,6 +120,41 @@ function buildSegments(
   return { segments, stubs };
 }
 
+// Room labels wrap into up to LABEL_MAX_LINES tspans of ~LABEL_MAX_CHARS characters
+// (≈80px at 11px type inside the 92px box) so every room's name stays legible inside
+// its own box instead of one long line spilling over its neighbors.
+const LABEL_MAX_CHARS = 13;
+const LABEL_MAX_LINES = 3;
+const LABEL_LINE_HEIGHT = 12;
+
+/** Greedy word-wrap of a room name into at most LABEL_MAX_LINES lines; anything that
+ *  still doesn't fit is ellipsized rather than allowed to overflow the box. */
+function wrapRoomName(name: string): string[] {
+  const words = name.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= LABEL_MAX_CHARS || !current) current = candidate;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+
+  const overflow = lines.length > LABEL_MAX_LINES;
+  const kept = lines
+    .slice(0, LABEL_MAX_LINES)
+    .map((l) => (l.length > LABEL_MAX_CHARS ? `${l.slice(0, LABEL_MAX_CHARS - 1)}…` : l));
+  if (overflow && !kept[kept.length - 1].endsWith('…')) {
+    const last = kept[kept.length - 1];
+    kept[kept.length - 1] =
+      last.length >= LABEL_MAX_CHARS ? `${last.slice(0, LABEL_MAX_CHARS - 1)}…` : `${last}…`;
+  }
+  return kept.length > 0 ? kept : [name];
+}
+
 function fitViewBox(rooms: RoomNode[]): ViewBox {
   const xs = rooms.map((r) => r.pos.x * UNIT);
   const ys = rooms.map((r) => r.pos.y * UNIT);
@@ -182,6 +217,9 @@ export function MapScreen() {
   const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(null);
 
   const lastFitGameId = useRef<string | null>(null);
+  // Which floor the viewBox was last fitted for — drives the refit-on-floor-switch
+  // render-phase adjustment below. State, not a ref: it's read during render.
+  const [fittedFloor, setFittedFloor] = useState<number | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinchStartDist = useRef<number | null>(null);
 
@@ -205,10 +243,26 @@ export function MapScreen() {
     lastFitGameId.current = gameId;
     setActiveFloor(null);
     const floor = roomsById.get(graph.currentRoomId ?? '')?.floor ?? 0;
+    setFittedFloor(floor);
     setViewBox(fitViewBox(allRooms.filter((r) => (r.floor ?? 0) === floor)));
     setTransform({ x: 0, y: 0, scale: 1 });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally once per gameId
   }, [gameId, allRooms.length]);
+
+  // Re-fit whenever the DISPLAYED floor changes (a floor-chip tap, a stub tap, or the
+  // player walking up/down stairs while auto-following): the previous floor's frozen
+  // viewBox has nothing to do with where the new floor's rooms sit, which is what made
+  // switching floors feel like the map "remapped" — rooms of the new floor could be
+  // entirely off-screen. Same-floor play never re-fits (that would fight the user's
+  // pan). Render-phase adjustment (React's "adjusting state when props change" pattern)
+  // rather than an effect, so the old floor's frame is never painted.
+  if (viewBox && fittedFloor !== displayFloor) {
+    setFittedFloor(displayFloor);
+    if (rooms.length > 0) {
+      setViewBox(fitViewBox(rooms));
+      setTransform({ x: 0, y: 0, scale: 1 });
+    }
+  }
 
   useEffect(() => {
     if (!toast) return;
@@ -472,7 +526,15 @@ export function MapScreen() {
               >
                 <rect x={-ROOM_W / 2} y={-ROOM_H / 2} width={ROOM_W} height={ROOM_H} rx={8} />
                 <text x={0} y={0} textAnchor="middle" dominantBaseline="middle">
-                  {room.name}
+                  {wrapRoomName(room.name).map((line, i, lines) => (
+                    <tspan
+                      key={i}
+                      x={0}
+                      y={(i - (lines.length - 1) / 2) * LABEL_LINE_HEIGHT}
+                    >
+                      {line}
+                    </tspan>
+                  ))}
                 </text>
               </g>
             );

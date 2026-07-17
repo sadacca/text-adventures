@@ -78,6 +78,7 @@ export interface RoomNode {
   firstDescription?: string;  // first buffer_text on first arrival (feeds phase 3 art)
   floor?: number;           // Batch 4 / UX-20 — see note below; undefined reads as 0
   floorLocked?: boolean;    // Batch 4 / UX-20 — true once a user sets floor directly
+  posAssigned?: boolean;    // 2026-07-17 — true once computeLayout has placed the room
 }
 
 export interface RoomEdge {
@@ -105,21 +106,42 @@ above but required to make rule 7's third clause actually testable/implementable
 room-name lookup checks `aliases` first, before the normal name-matching/disambiguation
 path.
 
-**2026-07-16 addition (Batch 4 / UX-20, multi-level maps — data model half):**
-`RoomNode.floor`/`floorLocked` (undefined `floor` reads as 0 everywhere). Auto-inferred
-by `Automapper.applyFloor`, called right after a destination room is resolved in both
-`handleMovement` and the true-teleport bootstrap path: `up`/`down` moves set the
-destination's floor to the origin's `floor ?? 0` plus/minus one; every other case
-(a teleport/bootstrap with no origin) defaults to floor 0; `in`/`out` moves never touch
-floor at all — deliberate, since entering/leaving a structure doesn't imply a level
-change in IF convention (Zork's own house interior/exterior share a floor). Once a
-room's `floor` is set — by inference OR by `setRoomFloor` (the `RoomEditSheet` "Floor"
-field, UX-21, which also sets `floorLocked`) — it is never overwritten again, the same
-"never destroy established data" policy `posLocked`/rule 7 already use. `computeLayout`
-(`src/map/layout.ts`) groups rooms by floor and lays out each independently; `MapScreen`
-renders one floor at a time with a floor switcher, rendering cross-floor `up`/`down`
-edges as tappable stubs rather than lines to an undrawn room. See §5's component
-inventory note and `docs/MOBILE_UX_TODO_2.md`'s UX-20/UX-21 entries for the full design.
+**2026-07-16 addition (Batch 4 / UX-20, multi-level maps — data model half), revised
+2026-07-17:** `RoomNode.floor`/`floorLocked` (undefined `floor` reads as 0 everywhere).
+Auto-inferred by `Automapper.applyFloor`, called right after a destination room is
+resolved in both `handleMovement` and the true-teleport bootstrap path. EVERY move
+propagates a floor to a not-yet-assigned destination: `up`/`down` set the origin's
+`floor ?? 0` plus/minus one, and everything else — horizontal compass moves, `in`/`out`,
+rule-4 custom edges — carries the origin's floor over unchanged (the absence of up/down
+means "same level"; Zork's house interior stays on the ground floor and its cellar rooms
+all stay at -1 as you walk between them). A teleport/bootstrap with no origin defaults
+to floor 0. *(The original 2026-07-16 design only assigned floors on `up`/`down`, which
+left every horizontally-reached room floor-undefined — i.e. rendered on floor 0 — so
+below-ground areas scattered onto the ground-floor map, and a later `up` from such a
+room computed from 0 instead of its real level. `tests/zork-floors.test.ts` locks in the
+corrected behavior live against Zork 1.)* Once a room's `floor` is set — by inference OR
+by `setRoomFloor` (the `RoomEditSheet` "Floor" field, UX-21, which also sets
+`floorLocked`) — it is never overwritten again, the same "never destroy established
+data" policy `posLocked`/rule 7 already use. `computeLayout` (`src/map/layout.ts`)
+groups rooms by floor and lays out each independently; `MapScreen` renders one floor at
+a time with a floor switcher, rendering cross-floor `up`/`down` edges as tappable stubs
+rather than lines to an undrawn room. See §5's component inventory note and
+`docs/MOBILE_UX_TODO_2.md`'s UX-20/UX-21 entries for the full design.
+
+**2026-07-17 addition (map stability + label legibility):** `computeLayout` is now
+incremental: a room placed once (`RoomNode.posAssigned`, or `posLocked` from a user
+drag) keeps its position on every later run; only never-placed rooms are positioned,
+BFS-ing outward from the already-placed part of their floor. A floor's very first
+layout anchors at its first-discovered room — deliberately NOT the current room, whose
+use as the anchor made the whole floor re-derive (and visibly reshuffle) every time it
+was re-entered from a different staircase. `setRoomFloor` clears `posAssigned` so a
+user-refloored room is re-placed on its new floor. Collision resolution is
+footprint-aware (a spot is free only if no room sits within ~a room box plus margin of
+it, catching the fractional `up`/`down` offsets the old exact-cell check missed), and
+`MapScreen` wraps room names onto up to three `tspan` lines (ellipsized past that) so
+every room's name stays inside its own box. `MapScreen` also re-fits the viewBox when
+the *displayed* floor changes (chip/stub tap or auto-follow across stairs) — never
+during same-floor play, which would fight the user's pan.
 
 ## 2. Direction normalization table (`src/map/directions.ts`)
 
