@@ -40,6 +40,9 @@ interface MapState {
   /** Batch 4 / UX-21: RoomEditSheet's Floor field. Locks the floor (setRoomFloor) so a
    *  later auto-inference never overwrites the user's choice. */
   setRoomFloor: (id: string, floor: number) => void;
+  /** Prospective mapping: re-aligns the automapper after a silent engine state rewind
+   *  (restoreSnapshot), whose response cycle never reaches handleEvent. */
+  resetCurrentRoom: (id: string) => void;
 }
 
 let automapper: Automapper | null = null;
@@ -138,6 +141,12 @@ export const useMapStore = create<MapState>((set) => ({
     if (!automapper) return;
     setRoomFloor(automapper.graph, id, floor);
     computeLayout(automapper.graph); // re-place the room on its new floor (posAssigned was cleared)
+    commit(set);
+  },
+
+  resetCurrentRoom(id) {
+    if (!automapper) return;
+    automapper.resetCurrentRoom(id);
     commit(set);
   },
 

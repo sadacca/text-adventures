@@ -684,8 +684,9 @@ export const useEngineStore = create<EngineState>((set, get) => ({
       // guard. A microtask runs only once the current stack has fully unwound.
       await Promise.resolve();
       await probeUnexploredDirections(
-        { sendCommand: (text) => engine.sendCommand(text), on: (l) => engine.on(l) },
+        engine,
         () => useMapStore.getState().graph,
+        (roomId) => useMapStore.getState().resetCurrentRoom(roomId),
         () => !probeCancelRequested,
       );
     } finally {

@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useEngineStore } from '../src/state/engineStore';
 import { useUiStore } from '../src/state/uiStore';
 import { useMapStore } from '../src/state/mapStore';
-import { addOrTouchGame } from '../src/storage/games';
+import { addOrTouchGame, restartPlaythrough } from '../src/storage/games';
 
 const uiInitial = useUiStore.getState();
 
@@ -22,7 +22,11 @@ afterEach(() => {
 
 async function openZork() {
   const bytes = readFileSync(resolve(__dirname, '../public/zork1.z3'));
-  const game = await addOrTouchGame(new Uint8Array(bytes), `zork1-${Date.now()}.z3`);
+  // gameId is a content hash, so every test in this worker shares one game record —
+  // wipe the playthrough (autosaves, map, transcript) so each test boots FRESH instead
+  // of silently auto-resuming wherever the previous test left the world.
+  const game = await addOrTouchGame(new Uint8Array(bytes), 'zork1.z3');
+  await restartPlaythrough(game.gameId);
   await useEngineStore.getState().openGame(game.gameId);
   return game.gameId;
 }
@@ -84,6 +88,42 @@ describe('prospective mapping through the real engineStore', () => {
 
       await sendAndSettle('w');
       expect(useMapStore.getState().graph.currentRoomId).toBe('west-of-house');
+    },
+  );
+
+  it(
+    'survives a long walk (far past the ~20-rewind /undo ceiling) without wedging',
+    { timeout: 240_000 },
+    async () => {
+      useUiStore.setState({ prospectiveMapping: true });
+      await openZork();
+      await settled();
+
+      // Regression for the "froze after ~80 turns" report: the original probe rewind
+      // used Bocfel's /undo meta-command, which corrupts the emglken WASM interpreter
+      // after roughly twenty uses — the VM permanently stops answering input. This
+      // wander spawns a probe burst in nearly every room (several rewinds each), far
+      // exceeding that ceiling; every player command must still land and settle.
+      const walk = [
+        'n', 'e', 'e', 'e', 'w', 'w', 'n', 'w', 'n', 'e',
+        's', 'w', 's', 'e', 'e', 'n', 'n', 's', 'w', 's',
+        'e', 'e', 'e', 'd', 'u', 'w', 'w', 'w', 'n', 'w',
+      ];
+      for (const cmd of walk) {
+        await sendAndSettle(cmd, 60_000);
+      }
+      const s = useEngineStore.getState();
+      expect(s.inputType).toBe('line');
+      expect(s.probing).toBe(false);
+      expect(s.traveling).toBe(false);
+      // The map grew substantially and never minted an undo/restore junk edge.
+      const graph = useMapStore.getState().graph;
+      expect(Object.keys(graph.rooms).length).toBeGreaterThan(10);
+      expect(
+        graph.edges.some(
+          (e) => e.dir.toLowerCase().includes('undo') || e.dir.toLowerCase().includes('restore'),
+        ),
+      ).toBe(false);
     },
   );
 

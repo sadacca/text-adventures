@@ -772,6 +772,19 @@ export class Automapper {
     this.graph.currentRoomId = room.id;
   }
 
+  /**
+   * Programmatic reattach after a caller-driven SILENT state rewind (prospective
+   * mapping's `engine.restoreSnapshot`): the rewind's whole response cycle is emitted
+   * silent, so no event ever reaches handleEvent — the caller tells the mapper where
+   * the world now is. Records nothing (no edges, no blockages); no-ops on an unknown id.
+   */
+  resetCurrentRoom(roomId: string): void {
+    if (!this.graph.rooms[roomId]) return;
+    this.lastDepartedRoomId = this.graph.currentRoomId;
+    this.lastTurnChangedRoom = false;
+    this.graph.currentRoomId = roomId;
+  }
+
   private ensureUnknownRoom(): void {
     if (this.graph.rooms[UNKNOWN_ROOM_ID]) return;
     this.graph.rooms[UNKNOWN_ROOM_ID] = {

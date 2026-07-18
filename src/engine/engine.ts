@@ -6,6 +6,7 @@ import type { EngineHandle, GameEvent } from './types.js';
 
 const STORY_PATH = '/story.dat';
 const AUTOSAVE_PATH = '/saves/__autosave.qzl';
+const SNAPSHOT_RESTORE_PATH = '/saves/__snapshot-restore.qzl';
 const namedSavePath = (name: string) => `/saves/named-${encodeURIComponent(name)}.qzl`;
 
 /**
@@ -50,6 +51,20 @@ export function createEngine(): EngineHandle {
   let busy = false;
   const readyWaiters: (() => void)[] = [];
   const queuedCommands: string[] = [];
+
+  /**
+   * Serializes saveAutosave/restoreSnapshot: both stake a claim on MemoryDialog's
+   * single `nextPromptPath` slot, and two overlapping calls (the per-turn background
+   * autosave racing prospective mapping's snapshot) let the first save consume the
+   * second's path — whose fileref prompt then falls through to the USER-FACING named
+   * save dialog and hangs the interpreter waiting for an answer nobody gives.
+   */
+  let snapshotChain: Promise<unknown> = Promise.resolve();
+  function serializedSnapshotOp<T>(op: () => Promise<T>): Promise<T> {
+    const next = snapshotChain.then(op, op);
+    snapshotChain = next.catch(() => {});
+    return next;
+  }
 
   function whenReady(): Promise<void> {
     if (!busy) return Promise.resolve();
@@ -160,14 +175,31 @@ export function createEngine(): EngineHandle {
       return () => rawListeners.delete(listener);
     },
 
-    async saveAutosave() {
-      dialog.setNextPromptPath(AUTOSAVE_PATH);
-      const written = dialog.waitForWrite(AUTOSAVE_PATH);
-      await whenReady();
-      dispatch('save', true);
-      const bytes = await written;
-      await whenReady();
-      return bytes;
+    saveAutosave() {
+      return serializedSnapshotOp(async () => {
+        dialog.setNextPromptPath(AUTOSAVE_PATH);
+        const written = dialog.waitForWrite(AUTOSAVE_PATH);
+        await whenReady();
+        dispatch('save', true);
+        const bytes = await written;
+        await whenReady();
+        return bytes;
+      });
+    },
+
+    restoreSnapshot(bytes) {
+      // In-session, silent state rewind: the same interpreter-driven RESTORE that
+      // start({autorestore}) runs at boot, without rebooting. Added for prospective
+      // mapping, whose probe rewinds originally used Bocfel's "/undo" meta-command —
+      // which corrupts the emglken/asyncify interpreter after ~20 uses (the VM stops
+      // responding to input, permanently). SAVE/RESTORE round-trips have no such limit.
+      return serializedSnapshotOp(async () => {
+        dialog.preload(SNAPSHOT_RESTORE_PATH, bytes);
+        dialog.setNextPromptPath(SNAPSHOT_RESTORE_PATH);
+        await whenReady();
+        dispatch('restore', true);
+        await whenReady();
+      });
     },
 
     async stop() {

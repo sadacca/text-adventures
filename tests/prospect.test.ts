@@ -4,6 +4,7 @@ import {
   PROBE_DIRECTIONS,
   probeUnexploredDirections,
   unexploredDirections,
+  type ProspectEngine,
 } from '../src/map/prospect';
 import type { GameEvent } from '../src/engine/types';
 
@@ -46,25 +47,54 @@ describe('prospective mapping: unexploredDirections', () => {
 });
 
 describe('prospective mapping: probeUnexploredDirections', () => {
-  it('skips immediately when the room is fully explored', async () => {
+  it('skips immediately when the room is fully explored (no snapshot taken)', async () => {
     const graph = createEmptyGraph();
     graph.rooms['cell'] = mkRoom('cell', 'Cell');
     graph.rooms['cell'].blockedDirections = [...PROBE_DIRECTIONS];
     graph.currentRoomId = 'cell';
 
     const sent: string[] = [];
-    const result = await probeUnexploredDirections(
-      {
-        sendCommand: (t) => sent.push(t),
-        on: () => () => {},
+    let snapshots = 0;
+    const engine: ProspectEngine = {
+      sendCommand: (t) => sent.push(t),
+      on: () => () => {},
+      saveAutosave: async () => {
+        snapshots++;
+        return new Uint8Array();
       },
+      restoreSnapshot: async () => {},
+    };
+    const result = await probeUnexploredDirections(
+      engine,
       () => graph,
+      () => {},
     );
     expect(result).toBe('skipped');
     expect(sent).toEqual([]);
+    expect(snapshots).toBe(0);
   });
 
-  it('aborts (without further commands) when /undo fails to return to the origin', async () => {
+  it('skips when the engine offers no restoreSnapshot (no rewind, no probing)', async () => {
+    const graph = createEmptyGraph();
+    graph.rooms['a'] = mkRoom('a', 'A');
+    graph.currentRoomId = 'a';
+    const sent: string[] = [];
+    const engine: ProspectEngine = {
+      sendCommand: (t) => sent.push(t),
+      on: () => () => {},
+      saveAutosave: async () => new Uint8Array(),
+    };
+    expect(
+      await probeUnexploredDirections(
+        engine,
+        () => graph,
+        () => {},
+      ),
+    ).toBe('skipped');
+    expect(sent).toEqual([]);
+  });
+
+  it('rewinds a successful probe move and aborts if the rewind does not land on the origin', async () => {
     const graph = createEmptyGraph();
     graph.rooms['a'] = mkRoom('a', 'A');
     graph.rooms['a'].blockedDirections = PROBE_DIRECTIONS.filter((d) => d !== 'n');
@@ -72,27 +102,79 @@ describe('prospective mapping: probeUnexploredDirections', () => {
     graph.currentRoomId = 'a';
 
     const sent: string[] = [];
+    let restores = 0;
     let listener: ((e: GameEvent) => void) | null = null;
-    const result = await probeUnexploredDirections(
-      {
-        sendCommand: (t) => {
-          sent.push(t);
-          // Simulate: the n move works (room becomes b), but /undo strands us in b.
-          graph.currentRoomId = 'b';
-          queueMicrotask(() =>
-            listener?.({ kind: 'input_requested', type: 'line', turn: sent.length }),
-          );
-        },
-        on: (l) => {
-          listener = l;
-          return () => {
-            listener = null;
-          };
-        },
+    const engine: ProspectEngine = {
+      sendCommand: (t) => {
+        sent.push(t);
+        graph.currentRoomId = 'b'; // the probe move lands in b
+        queueMicrotask(() =>
+          listener?.({ kind: 'input_requested', type: 'line', turn: sent.length }),
+        );
       },
+      on: (l) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+      saveAutosave: async () => new Uint8Array([1]),
+      restoreSnapshot: async () => {
+        restores++;
+      },
+    };
+    // onRewound deliberately does NOT reset the graph — simulating a rewind that
+    // failed to land back at the origin. The loop must abort, not keep probing.
+    const result = await probeUnexploredDirections(
+      engine,
       () => graph,
+      () => {},
     );
     expect(result).toBe('aborted');
-    expect(sent).toEqual(['n', '/undo']); // stopped immediately, no further probes
+    expect(sent).toEqual(['n']); // stopped immediately after the failed rewind
+    expect(restores).toBe(1);
+  });
+
+  it('probes all directions when the rewind works, restoring only after real moves', async () => {
+    const graph = createEmptyGraph();
+    graph.rooms['a'] = mkRoom('a', 'A');
+    graph.rooms['a'].blockedDirections = PROBE_DIRECTIONS.filter((d) => d !== 'n' && d !== 'e');
+    graph.rooms['b'] = mkRoom('b', 'B');
+    graph.currentRoomId = 'a';
+
+    const sent: string[] = [];
+    let restores = 0;
+    let listener: ((e: GameEvent) => void) | null = null;
+    const engine: ProspectEngine = {
+      sendCommand: (t) => {
+        sent.push(t);
+        if (t === 'n') graph.currentRoomId = 'b'; // n moves; e is blocked (no change)
+        queueMicrotask(() =>
+          listener?.({ kind: 'input_requested', type: 'line', turn: sent.length }),
+        );
+      },
+      on: (l) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+      saveAutosave: async () => new Uint8Array([1]),
+      // The real restore rewinds the WORLD silently — the mapper's graph only moves
+      // when onRewound re-aligns it, which is exactly what this test verifies.
+      restoreSnapshot: async () => {
+        restores++;
+      },
+    };
+    const result = await probeUnexploredDirections(
+      engine,
+      () => graph,
+      (roomId) => {
+        graph.currentRoomId = roomId;
+      },
+    );
+    expect(result).toBe('completed');
+    expect(sent).toEqual(['n', 'e']);
+    expect(restores).toBe(1); // only the successful move needed a rewind
   });
 });

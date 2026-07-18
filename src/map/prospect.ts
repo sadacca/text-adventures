@@ -6,14 +6,21 @@ import { UNKNOWN_ROOM_ID, type Direction, type MapGraph } from './graph.js';
  * settles the app quietly probes each still-unexplored compass direction from the
  * current room — send the move, let the automapper record what happens (a confirmed
  * edge + the destination room on success, a blockedDirections entry on failure), then
- * immediately rewind with Bocfel's interpreter-level `/undo` meta-command (which works
- * even for games with no in-game UNDO, like Zork 1 — the interpreter snapshots every
- * turn itself). Net effect: the map and compass fill in every openable direction of a
- * room the moment it's first visited, without the player spending real moves — the
- * final /undo restores the exact pre-probe world state.
+ * rewind the world to a snapshot taken before the probing began. Net effect: the map
+ * and compass fill in every openable direction of a room the moment it's first
+ * visited, without the player spending real moves.
  *
- * The Automapper's own undo handling (`isUndoCommand` / `handleUndo` in graph.ts)
- * guarantees the rewind never mints an edge and lands back on the exact origin node.
+ * REWIND MECHANISM (revised 2026-07-18): one silent `engine.saveAutosave()` snapshot
+ * per room, then `engine.restoreSnapshot(bytes)` after each successful probe move —
+ * the same interpreter-driven SAVE/RESTORE round-trip the per-turn autosave and boot
+ * auto-resume already use. The original implementation rewound with Bocfel's
+ * interpreter-level `/undo` meta-command, which corrupts the emglken/asyncify WASM
+ * interpreter after roughly twenty uses — the VM permanently stops answering input,
+ * which surfaced as "the interface froze after ~80 turns". SAVE/RESTORE has no such
+ * limit (hammer-tested for hundreds of cycles).
+ *
+ * The restore's response cycle is SILENT, so the automapper never sees it — the
+ * `onRewound` callback re-aligns it to the origin room after each rewind.
  */
 
 /** Probe order: cheap horizontal sweep first, verticals last. `in`/`out` are
@@ -33,13 +40,16 @@ export const PROBE_DIRECTIONS: Direction[] = [
   'down',
 ];
 
-export const UNDO_COMMAND = '/undo';
+/** Belt-and-braces: if the interpreter ever stops responding mid-burst, the burst
+ *  aborts and releases the UI instead of holding `probing`/`traveling` forever. */
+export const PROBE_STEP_TIMEOUT_MS = 15_000;
 
-/** The minimal engine surface probing needs — satisfied by EngineHandle, and by the
- *  live tests' raw engine, without dragging store wiring in here. */
+/** The engine surface probing needs — satisfied structurally by EngineHandle. */
 export interface ProspectEngine {
   sendCommand(text: string): void;
   on(listener: (event: GameEvent) => void): () => void;
+  saveAutosave(): Promise<Uint8Array>;
+  restoreSnapshot?(bytes: Uint8Array): Promise<void>;
 }
 
 export type ProspectResult = 'completed' | 'aborted' | 'skipped';
@@ -65,45 +75,67 @@ export function unexploredDirections(graph: MapGraph, roomId: string): Direction
 /**
  * Runs the probe loop from the current room. Aborts (leaving the player wherever the
  * game put them — never guess further) the moment anything unexpected happens: a char
- * prompt (can't be answered blindly), a quit, or an /undo that does not return to the
- * origin room. The caller is responsible for gating UI input for the duration and for
- * keeping probe turns out of the transcript/autosave stream.
+ * prompt (can't be answered blindly), a quit, a step timeout, or a rewind that does
+ * not land back on the origin room. The caller is responsible for gating UI input for
+ * the duration and for keeping probe turns out of the transcript/autosave stream.
  *
- * `shouldContinue` is polled between complete move+undo pairs — the player typing a
+ * `shouldContinue` is polled between complete probe steps — the player typing a
  * command mid-burst cancels further probing so their command runs promptly, but an
- * already-sent probe move ALWAYS gets its /undo first (the world must never be left
+ * already-sent probe move ALWAYS gets its rewind first (the world must never be left
  * one probe-step away from where the player thinks they are).
  */
 export async function probeUnexploredDirections(
   engine: ProspectEngine,
   getGraph: () => MapGraph,
+  onRewound: (roomId: string) => void,
   shouldContinue: () => boolean = () => true,
 ): Promise<ProspectResult> {
+  if (!engine.restoreSnapshot) return 'skipped'; // no rewind mechanism, no probing
   const originId = getGraph().currentRoomId;
   if (!originId || originId === UNKNOWN_ROOM_ID) return 'skipped';
   const dirs = unexploredDirections(getGraph(), originId);
   if (dirs.length === 0) return 'skipped';
 
+  const snapshot = await withTimeout(engine.saveAutosave());
+  if (snapshot === 'timeout') return 'aborted';
+
   for (const dir of dirs) {
     if (!shouldContinue()) return 'aborted';
     if ((await runTurn(engine, dir)) !== 'line') return 'aborted';
     if (getGraph().currentRoomId !== originId) {
-      if ((await runTurn(engine, UNDO_COMMAND)) !== 'line') return 'aborted';
+      if ((await withTimeout(engine.restoreSnapshot(snapshot))) === 'timeout') return 'aborted';
+      onRewound(originId);
       if (getGraph().currentRoomId !== originId) return 'aborted';
     }
   }
   return 'completed';
 }
 
+function withTimeout<T>(promise: Promise<T>): Promise<T | 'timeout'> {
+  return Promise.race([
+    promise,
+    new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), PROBE_STEP_TIMEOUT_MS)),
+  ]);
+}
+
 /** Sends one command and resolves with the type of the next REAL input request. */
-function runTurn(engine: ProspectEngine, cmd: string): Promise<'line' | 'char' | 'quit'> {
+function runTurn(
+  engine: ProspectEngine,
+  cmd: string,
+): Promise<'line' | 'char' | 'quit' | 'timeout'> {
   return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      unsubscribe();
+      resolve('timeout');
+    }, PROBE_STEP_TIMEOUT_MS);
     const unsubscribe = engine.on((event) => {
       if ('silent' in event && event.silent) return;
       if (event.kind === 'input_requested') {
+        clearTimeout(timer);
         unsubscribe();
         resolve(event.type);
       } else if (event.kind === 'quit') {
+        clearTimeout(timer);
         unsubscribe();
         resolve('quit');
       }

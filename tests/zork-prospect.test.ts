@@ -1,9 +1,10 @@
 /**
  * Live end-to-end prospective-mapping test against the real, bundled Zork 1 on the
  * real engine. Probing sends each unexplored compass direction from the current room
- * and rewinds successful moves with Bocfel's interpreter-level "/undo" (Zork 1 itself,
- * a v3 game, has no in-game UNDO — the interpreter provides it). The automapper's undo
- * handling must bring currentRoomId back to the origin without minting any edge.
+ * and rewinds successful moves via engine.restoreSnapshot (silent SAVE/RESTORE — NOT
+ * Bocfel's "/undo" meta-command, which corrupts the emglken WASM interpreter after
+ * ~20 uses). The onRewound callback must re-align the automapper to the origin
+ * without minting any edge.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -60,7 +61,8 @@ describe('zork1 live prospective mapping', () => {
       const { am, engine, send } = await bootZork();
       expect(am.graph.currentRoomId).toBe('west-of-house');
 
-      const result = await probeUnexploredDirections(engine, () => am.graph);
+      const onRewound = (roomId: string) => am.resetCurrentRoom(roomId);
+      const result = await probeUnexploredDirections(engine, () => am.graph, onRewound);
       expect(result).toBe('completed');
 
       // The player never actually went anywhere.
@@ -75,20 +77,24 @@ describe('zork1 live prospective mapping', () => {
       // ...and the boarded front door registered as blocked going east.
       expect(am.graph.rooms['west-of-house'].blockedDirections).toContain('e');
 
-      // The rewinds left no trace: no undo-labeled edges, no unknown rooms, and every
+      // The rewinds left no trace: no undo/restore-labeled edges, no unknown rooms, and every
       // discovered room stayed on the ground floor.
-      expect(am.graph.edges.some((e) => e.dir.toLowerCase().includes('undo'))).toBe(false);
+      expect(
+        am.graph.edges.some(
+          (e) => e.dir.toLowerCase().includes('undo') || e.dir.toLowerCase().includes('restore'),
+        ),
+      ).toBe(false);
       expect(am.graph.rooms['unknown']).toBeUndefined();
       for (const room of Object.values(am.graph.rooms)) {
         expect(room.floor ?? 0, `floor of ${room.id}`).toBe(0);
       }
 
       // A second pass has nothing left to learn — zero commands sent.
-      expect(await probeUnexploredDirections(engine, () => am.graph)).toBe('skipped');
+      expect(await probeUnexploredDirections(engine, () => am.graph, onRewound)).toBe('skipped');
 
       // The game itself is undisturbed: still at West of House, and the mailbox is
-      // still closed (a probe that leaked state would be a real bug — /undo must have
-      // restored the world each time).
+      // still closed (a probe that leaked state would be a real bug — the rewind must
+      // have restored the world each time).
       await send('open mailbox');
       const after = await send('read leaflet');
       expect(after.trim()).toBe('West of House');
@@ -98,7 +104,7 @@ describe('zork1 live prospective mapping', () => {
       await send('close mailbox');
       await send('n');
       expect(am.graph.currentRoomId).toBe('north-of-house');
-      expect(await probeUnexploredDirections(engine, () => am.graph)).toBe('completed');
+      expect(await probeUnexploredDirections(engine, () => am.graph, onRewound)).toBe('completed');
       expect(am.graph.currentRoomId).toBe('north-of-house');
       const northExits = confirmedExits(am, 'north-of-house');
       expect(northExits.get('n')).toBe('forest-path');
