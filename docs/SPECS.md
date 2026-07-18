@@ -200,6 +200,30 @@ all three):
   a guess must not override a direct observation (Zork: North of House -w-> West of
   House is real, but West of House's east is a boarded door).
 
+**2026-07-18 follow-up (probe rewind reworked: SAVE/RESTORE instead of "/undo"):** the
+field report "froze after ~80 turns" isolated (via engine-level hammer tests) to
+Bocfel's `/undo` meta-command itself: after roughly TWENTY uses it corrupts the
+emglken/asyncify WASM interpreter — the VM permanently stops answering input, with no
+error and no dropped-event log. Plain turns and SAVE round-trips have no such limit
+(hundreds of cycles clean). Prospective mapping therefore no longer uses `/undo` at
+all: it takes ONE silent `engine.saveAutosave()` snapshot per room and rewinds each
+successful probe move with the new `EngineHandle.restoreSnapshot(bytes)` — the same
+interpreter-driven silent RESTORE that boot auto-resume uses, in-session and without a
+reboot. Because the restore's whole response cycle is silent, the automapper never
+sees it; `probeUnexploredDirections`'s new `onRewound` callback re-aligns it via
+`Automapper.resetCurrentRoom` (exposed through `mapStore.resetCurrentRoom`). Probe
+steps also now carry a 15s timeout (`PROBE_STEP_TIMEOUT_MS`) so ANY future engine
+stall aborts the burst and releases the UI instead of holding probing/traveling
+forever. Two engine-level fixes shipped with this: `saveAutosave`/`restoreSnapshot`
+are serialized on a shared promise chain (two overlapping saves — the per-turn
+background autosave racing the probe snapshot — let the first consume MemoryDialog's
+single `nextPromptPath`, dropping the second into the user-facing named-save dialog,
+which hangs the interpreter), and the Automapper's undo handling (previous entry)
+remains for PLAYER-typed `undo`/`/undo`, which stays subject to the interpreter's
+~20-use bug until fixed upstream. `tests/zork-prospect-store.test.ts` includes a
+30-move probing walk (several rewinds per room, far past the old ceiling) as the
+regression guard.
+
 **2026-07-17 addition (map stability + label legibility):** `computeLayout` is now
 incremental: a room placed once (`RoomNode.posAssigned`, or `posLocked` from a user
 drag) keeps its position on every later run; only never-placed rooms are positioned,

@@ -35,6 +35,13 @@ export interface EngineHandle {
   sendChar(value: string): void;
   on(listener: (e: GameEvent) => void): () => void; // returns unsubscribe
   saveAutosave(): Promise<Uint8Array>; // opaque snapshot blob
+  /** Silent, in-session state rewind to a `saveAutosave()` snapshot — the same
+   *  interpreter-driven RESTORE the boot autorestore uses, without a reboot. Its whole
+   *  response cycle is emitted `silent`, so state-tracking consumers (automapper) never
+   *  see it; the caller is responsible for re-aligning them. Added for prospective
+   *  mapping (Bocfel's "/undo" meta-command corrupts the WASM interpreter after ~20
+   *  uses; SAVE/RESTORE round-trips don't). Optional: test fakes may omit it. */
+  restoreSnapshot?(bytes: Uint8Array): Promise<void>;
   stop(): Promise<void>;
   /** True while a line command (real or silent) is in flight or queued — i.e. the VM
    *  has not returned to an idle line prompt. Optional so test fakes may omit it;
